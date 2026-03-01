@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
+import { DEFAULT_BUBBLE_COLOR } from '../utils/constants';
 
 export const useSettings = () => {
   const [theme, setTheme] = useState('system');
   const [fontSize, setFontSize] = useState('M');
   const [fontFamily, setFontFamily] = useState('standard');
-  const [background, setBackground] = useState('moon'); // ✅ DEFAULT RESTORED
+  const [background, setBackground] = useState('moon');
   const [fontWeight, setFontWeight] = useState('regular');
   const [soundEffects, setSoundEffects] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
@@ -18,7 +19,9 @@ export const useSettings = () => {
   });
   const [selectedVoice, setSelectedVoice] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false); // ✅ NEW: Track if settings loaded
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [bubbleColor, setBubbleColor] = useState(DEFAULT_BUBBLE_COLOR); // Chat bubble color theme
+  const [autoScroll, setAutoScroll] = useState(true); // Auto-scroll on new messages
 
   // Load settings on mount
   useEffect(() => {
@@ -36,6 +39,8 @@ export const useSettings = () => {
         setAnimationsEnabled(settings.animationsEnabled !== undefined ? settings.animationsEnabled : true);
         setTtsEnabled(settings.ttsEnabled !== undefined ? settings.ttsEnabled : true);
         if (settings.ttsSettings) setTtsSettings(settings.ttsSettings);
+        setBubbleColor(settings.bubbleColor || DEFAULT_BUBBLE_COLOR);
+        setAutoScroll(settings.autoScroll !== undefined ? settings.autoScroll : true);
       } catch (error) {
         console.error('Error loading settings:', error);
       }
@@ -87,8 +92,8 @@ export const useSettings = () => {
 
   // Save settings on change
   useEffect(() => {
-    if (!isLoaded) return; // ✅ Don't save until initial load complete
-    
+    if (!isLoaded) return; // Don't save until initial load complete
+
     const settings = {
       theme,
       fontSize,
@@ -100,10 +105,12 @@ export const useSettings = () => {
       animationsEnabled,
       ttsEnabled,
       ttsSettings,
-      selectedVoice: selectedVoice?.name
+      selectedVoice: selectedVoice?.name,
+      bubbleColor,
+      autoScroll
     };
     localStorage.setItem('aiShineSettings', JSON.stringify(settings));
-  }, [theme, fontSize, fontFamily, background, fontWeight, soundEffects, bedtimeMode, animationsEnabled, ttsEnabled, ttsSettings, selectedVoice, isLoaded]);
+  }, [theme, fontSize, fontFamily, background, fontWeight, soundEffects, bedtimeMode, animationsEnabled, ttsEnabled, ttsSettings, selectedVoice, isLoaded, bubbleColor, autoScroll]);
 
   return {
     theme, setTheme,
@@ -119,6 +126,8 @@ export const useSettings = () => {
     ttsSettings, setTtsSettings,
     selectedVoice, setSelectedVoice,
     isDarkMode,
-    isLoaded // ✅ Export loaded state
+    isLoaded,
+    bubbleColor, setBubbleColor,
+    autoScroll, setAutoScroll
   };
 };

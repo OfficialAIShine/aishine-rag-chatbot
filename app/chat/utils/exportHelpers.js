@@ -8,7 +8,7 @@ export const exportToPDF = async (messages, sessionDate) => {
     let yPosition = 20;
 
     pdf.setFontSize(18);
-    pdf.text('AI Shine Chat Export', pageWidth / 2, yPosition, { align: 'center' });
+    pdf.text('AI Shine Chat', pageWidth / 2, yPosition, { align: 'center' });
     yPosition += 10;
     
     pdf.setFontSize(10);
@@ -55,7 +55,7 @@ export const exportToPDF = async (messages, sessionDate) => {
 };
 
 export const exportToMarkdown = (messages, sessionDate) => {
-  let markdown = `# AI Shine Chat Export\n**Date:** ${sessionDate}\n\n---\n\n`;
+  let markdown = `# AI Shine Chat\n**Date:** ${sessionDate}\n\n---\n\n`;
   
   messages.forEach((msg) => {
     const role = msg.role === 'human' ? '**You:**' : '**AI Shine:**';

@@ -1,11 +1,10 @@
-// claude page.js
+// page.js
 "use client";
 
 import { useState, useRef, useEffect } from "react";
 import { Download, Focus } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import FocusPlant from './components/FocusPlant';
-// import MotivationalCard from './components/MotivationalCard';
 import { motion } from "framer-motion";
 import { 
   Settings, 
@@ -26,33 +25,37 @@ import {
   FileText,
   Zap,
   Check,
+  X
 } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 
-// Components OUTSIDE chat
+// Components
 import Header from "./header_components/Header";
-
-// Components INSIDE chat
 import LandingScreen from "./components/LandingScreen";
 import ChatMessage from "./components/ChatMessage";
 import InputArea from "./components/InputArea";
 import SettingsModal from "./components/SettingsModal";
+import ConversationSidebar from "./components/ConversationSidebar";
+import ChatWidget from "./components/ChatWidget";
 
-// Hooks INSIDE chat
+// Hooks
 import { useSettings } from "./hooks/useSettings";
 import { useTTS } from "./hooks/useTTS";
 import { useSpeechRecognition } from "./hooks/useSpeechRecognition";
 import { useConfetti } from "./hooks/useConfetti";
-import {X } from "lucide-react"; 
 
-// Utils INSIDE chat
+// Utils
 import { playSound } from "./utils/soundEffects";
 import { exportToPDF } from "./utils/exportHelpers";
+import { sendChatMessage, getConversation } from "./utils/api";
+import { getSessionId, getCurrentConversationId, setCurrentConversationId } from "./utils/session";
+import { formatAIResponse } from "./utils/formatText";
 import {
   FONT_SIZE_MAP,
   FONT_FAMILY_MAP,
   BACKGROUND_MAP,
   WELCOME_GRADIENTS,
+  getChatBackground,
 } from "./utils/constants";
 
 
@@ -63,12 +66,18 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [isFirstMessage, setIsFirstMessage] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
+  const [currentConversationId, setCurrentConvId] = useState(null);
+  const [isMinimized, setIsMinimized] = useState(false); // Widget minimized state
+
+  const [streamingContent, setStreamingContent] = useState("");
+  const fullStreamBuffer = useRef("");
+  const isStreamingActive = useRef(false);
   const [sessionDate, setSessionDate] = useState('');
   const [gradientIndex, setGradientIndex] = useState(0);
   const [hoveredSuggestion, setHoveredSuggestion] = useState(null);
   const [feedback, setFeedback] = useState({});
   const [copiedIndex, setCopiedIndex] = useState(null);
-  // const [showMotivationalCard, setShowMotivationalCard] = useState(false);
   const [previewBackground, setPreviewBackground] = useState(null);
 
   // Refs
@@ -81,18 +90,131 @@ export default function Home() {
   const speechRecognition = useSpeechRecognition();
   const { triggerCelebration } = useConfetti();
 
-  // Initialize
+  // Initialize session
   useEffect(() => {
+    const sessionId = getSessionId();
+    console.log('[APP] Session ID:', sessionId);
+    
     const today = new Date();
     const formattedDate = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
     setSessionDate(formattedDate);
     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
+
+    // Load current conversation ID from localStorage
+    const convId = getCurrentConversationId();
+    if (convId) {
+      setCurrentConvId(convId);
+      console.log('[APP] Loaded conversation ID:', convId);
+    }
   }, []);
 
-  // Auto-scroll
+  // Auto-scroll - always scroll to bottom on new messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (settings.autoScroll !== false && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, settings.autoScroll, streamingContent]);
+
+  // Format markdown-like text to HTML for display
+  const formatMessage = (text) => {
+    if (!text || typeof text !== 'string') return '';
+
+    let formatted = text;
+
+    // Code blocks (```code```) - preserve content
+    formatted = formatted.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
+      return `<pre class="bg-gray-800 dark:bg-gray-900 text-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-sm font-mono"><code>${code.trim()}</code></pre>`;
+    });
+
+    // Inline code (`code`)
+    formatted = formatted.replace(/`([^`]+)`/g, '<code class="bg-gray-200 dark:bg-gray-700 text-pink-600 dark:text-pink-400 px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
+
+    // Bold (**text** or __text__)
+    formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold">$1</strong>');
+    formatted = formatted.replace(/__([^_]+)__/g, '<strong class="font-bold">$1</strong>');
+
+    // Italic (*text* or _text_) - single asterisk/underscore
+    formatted = formatted.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em class="italic">$1</em>');
+    formatted = formatted.replace(/(?<!_)_([^_]+)_(?!_)/g, '<em class="italic">$1</em>');
+
+    // Headers
+    formatted = formatted.replace(/^### (.+)$/gm, '<h3 class="text-base font-bold mt-3 mb-1">$1</h3>');
+    formatted = formatted.replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-3 mb-1">$1</h2>');
+    formatted = formatted.replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-3 mb-2">$1</h1>');
+
+    // Blockquotes
+    formatted = formatted.replace(/^> (.+)$/gm, '<blockquote class="border-l-4 border-purple-500 pl-3 py-1 my-2 italic text-gray-600 dark:text-gray-400">$1</blockquote>');
+
+    // Bullet points (- item or * item at start of line)
+    formatted = formatted.replace(/^[\-\*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>');
+
+    // Numbered lists (1. item)
+    formatted = formatted.replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>');
+
+    // Wrap consecutive list items
+    formatted = formatted.replace(/(<li class="ml-4 list-disc">[^<]*<\/li>\n?)+/g, '<ul class="my-2 space-y-1">$&</ul>');
+    formatted = formatted.replace(/(<li class="ml-4 list-decimal">[^<]*<\/li>\n?)+/g, '<ol class="my-2 space-y-1">$&</ol>');
+
+    // Horizontal rules
+    formatted = formatted.replace(/^(-{3,}|\*{3,})$/gm, '<hr class="my-3 border-gray-300 dark:border-gray-600" />');
+
+    // Links [text](url)
+    formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-purple-600 dark:text-purple-400 hover:underline">$1</a>');
+
+    // Paragraphs - double newlines become paragraph breaks
+    formatted = formatted.replace(/\n\n+/g, '</p><p class="mb-3">');
+
+    // Single newlines become line breaks
+    formatted = formatted.replace(/\n/g, '<br />');
+
+    // Wrap in paragraph tags
+    if (!formatted.startsWith('<h') && !formatted.startsWith('<pre') && !formatted.startsWith('<ul') && !formatted.startsWith('<ol') && !formatted.startsWith('<blockquote')) {
+      formatted = `<p class="mb-3">${formatted}</p>`;
+    }
+
+    // Clean up empty paragraphs and fix nesting issues
+    formatted = formatted.replace(/<p class="mb-3"><\/p>/g, '');
+    formatted = formatted.replace(/<p class="mb-3">(<h[1-3])/g, '$1');
+    formatted = formatted.replace(/(<\/h[1-3]>)<\/p>/g, '$1');
+    formatted = formatted.replace(/<p class="mb-3">(<ul|<ol|<pre|<blockquote|<hr)/g, '$1');
+    formatted = formatted.replace(/(<\/ul>|<\/ol>|<\/pre>|<\/blockquote>)<\/p>/g, '$1');
+    formatted = formatted.replace(/<br \/><\/p>/g, '</p>');
+    formatted = formatted.replace(/<p class="mb-3"><br \/>/g, '<p class="mb-3">');
+
+    return formatted;
+  };
+
+  // Streaming effect - faster update for live streaming feel
+  useEffect(() => {
+    if (!isStreamingActive.current) return;
+
+    const interval = setInterval(() => {
+      setStreamingContent((prev) => {
+        const target = fullStreamBuffer.current;
+        if (prev.length >= target.length) return prev;
+        // Stream multiple characters at once for smoother experience
+        const chunkSize = Math.min(5, target.length - prev.length);
+        const nextChunk = target.slice(prev.length, prev.length + chunkSize);
+        return prev + nextChunk;
+      });
+    }, 15); // Faster interval for smoother streaming
+
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  useEffect(() => {
+    if (loading && messages.length > 0) {
+      setMessages((prev) => {
+        const updated = [...prev];
+        const lastIdx = updated.length - 1;
+        if (updated[lastIdx]?.role === "ai" && updated[lastIdx]?.isStreaming) {
+          // Apply formatting during streaming
+          updated[lastIdx].content = formatMessage(streamingContent);
+        }
+        return updated;
+      });
+    }
+  }, [streamingContent, loading]);
 
   // Focus textarea
   useEffect(() => {
@@ -101,7 +223,7 @@ export default function Home() {
     }
   }, [isFirstMessage]);
 
-  // Handle speech recognition transcript
+  // Handle speech recognition
   useEffect(() => {
     if (speechRecognition.transcript) {
       setInput(prev => prev ? `${prev} ${speechRecognition.transcript}` : speechRecognition.transcript);
@@ -116,13 +238,20 @@ export default function Home() {
     if (hour < 18) return 'Good afternoon';
     return 'Good evening';
   };
-const handlePreviewBackground = (bg) => {
+
+  const handlePreviewBackground = (bg) => {
     setPreviewBackground(bg);
   };
-const handleSuggestionClick = (suggestion) => {
-    if (settings.animationsEnabled) { // ✅ ADD THIS CONDITION
+
+  const handleSuggestionClick = (suggestion) => {
+    if (loading) {
+      toast.error('Please wait for AI to finish responding');
+      return;
+    }
+    
+    if (settings.animationsEnabled) {
       triggerCelebration();
-    } // ✅ END CONDITION
+    }
     playSound('success', settings.soundEffects);
     setInput(suggestion);
     
@@ -151,6 +280,11 @@ const handleSuggestionClick = (suggestion) => {
 
   const sendMessage = async () => {
     if (!input.trim()) return;
+    
+    if (loading) {
+      toast.error('Please wait for AI to finish responding');
+      return;
+    }
 
     playSound('send', settings.soundEffects);
 
@@ -181,93 +315,87 @@ const handleSuggestionClick = (suggestion) => {
     await sendToAI(newMessages);
   };
 
-  async function sendToAI(newMessages) {
-  setLoading(true);
-  try {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000/chat';
+  async function sendToAI(chatHistory) {
+    if (loading) return;
+    setLoading(true);
 
-    const formattedMessages = newMessages.map((msg) => ({
-      role: msg.role,
-      content: typeof msg.content === 'string' ? msg.content : msg.content.answer || JSON.stringify(msg.content),
-      type: msg.type || 'text',
-    }));
-
-    const res = await fetch(backendUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_history: formattedMessages }),
-    });
-
-    if (!res.ok) {
-      throw new Error(`Backend returned ${res.status}`);
-    }
-
-    const data = await res.json();
-    const rawAnswer = data.answer || '🤖 I\'m here to help!';
-    const responseType = data.type || 'text';
+    fullStreamBuffer.current = "";
+    setStreamingContent("");
+    isStreamingActive.current = true;
 
     const timestamp = new Date().toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit'
     });
 
-    let messageBlock;
-
-    if (responseType === 'greeting') {
-      messageBlock = { role: 'ai', type: 'greeting', content: rawAnswer, timestamp };
-    } else if (responseType === 'decline') {
-      messageBlock = { role: 'ai', type: 'decline', content: rawAnswer, timestamp };
-    } else if (responseType === 'structured') {
-      const parsed = parseStructuredAnswer(rawAnswer);
-      messageBlock = { role: 'ai', type: 'structured', content: parsed, timestamp };
-    } else {
-      messageBlock = { role: 'ai', type: 'text', content: rawAnswer, timestamp };
-    }
-
-    setMessages((prev) => [...prev, messageBlock]);
-    playSound('success', settings.soundEffects);
-  } catch (error) {
-    console.error('[ERROR]', error);
-    const timestamp = new Date().toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
     setMessages((prev) => [
       ...prev,
       {
         role: 'ai',
-        type: 'error',
-        content: '⚠️ Oops! Couldn\'t connect to AI Shine\'s server.',
-        timestamp
-      },
+        type: 'text', 
+        content: '',
+        timestamp,
+        isStreaming: true
+      }
     ]);
-    toast.error('Failed to connect to server');
-  } finally {
-    setLoading(false);
-  }
-}
 
-  const markdownToHtml = (text) => {
-    return text
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // **bold**
-      .replace(/\*(.*?)\*/g, '<em>$1</em>');             // *italic*
-  };
-  function parseStructuredAnswer(rawAnswer) {
-    const parts = rawAnswer.split(/\*\*Key Points:\*\*|<strong>Key Points:<\/strong>/i);
+    try {
+      const formattedMessages = chatHistory
+        .filter((msg) => msg.type !== 'error')
+        .map((msg) => ({
+          role: msg.role,
+          content: typeof msg.content === 'string' 
+            ? msg.content 
+            : msg.content?.answer || JSON.stringify(msg.content),
+          type: msg.type || 'text',
+        }));
 
-    if (parts.length === 2) {
-      const answerPart = parts[0].replace(/\*\*Answer:\*\*|<strong>Answer:<\/strong>/gi, '').trim();
-      const keyPointsPart = parts[1].trim();
+      // Use new API helper with session + conversation headers
+      const result = await sendChatMessage(
+        formattedMessages,
+        (chunk) => {
+          fullStreamBuffer.current += chunk;
+        }
+      );
 
-      const keyPoints = keyPointsPart
-        .split(/\n|<li>/)
-        .map((line) => line.replace(/<\/?[^>]+(>|$)/g, '').replace(/^[•\-\*]\s*/, '').trim())
-        .filter(Boolean);
+      playSound('success', settings.soundEffects);
 
-      return { answer: answerPart, keyPoints };
+    } catch (error) {
+      console.error('[STREAMING_ERROR]', error);
+      
+      setMessages((prev) => {
+        const newArr = [...prev];
+        const lastIndex = newArr.length - 1;
+        newArr[lastIndex] = {
+          ...newArr[lastIndex],
+          role: 'ai',
+          type: 'error',
+          content: '⚠️ Connection lost. Please try again.',
+          isStreaming: false
+        };
+        return newArr;
+      });
+      
+      toast.error('Connection interrupted');
+    } finally {
+      setMessages((prev) => {
+        const updated = [...prev];
+        const lastIdx = updated.length - 1;
+        // Apply formatting to final content
+        updated[lastIdx].content = formatMessage(fullStreamBuffer.current);
+        updated[lastIdx].isStreaming = false;
+        return updated;
+      });
+
+      isStreamingActive.current = false;
+      setLoading(false);
+
+      setTimeout(() => {
+        if (settings.autoScroll && messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 100);
     }
-
-    return { answer: rawAnswer, keyPoints: [] };
   }
 
   const handleTextareaChange = (e) => {
@@ -283,38 +411,82 @@ const handleSuggestionClick = (suggestion) => {
     setInput('');
     setIsFirstMessage(true);
     setFeedback({});
+    setCurrentConvId(null);
+    setCurrentConversationId(null);
     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
     playSound('click', settings.soundEffects);
     toast.success('Chat cleared!');
   };
 
-  const handleFeedback = (messageIndex, type) => {
-  setFeedback(prev => {
-    const newFeedback = { ...prev };
-    if (newFeedback[messageIndex] === type) {
-      // Reset if clicking same button
-      delete newFeedback[messageIndex];
-    } else {
-      newFeedback[messageIndex] = type;
+  const handleSelectConversation = async (conversation) => {
+    try {
+      toast.loading('Loading conversation...');
+
+      const fullConv = await getConversation(conversation.id);
+
+      // Convert backend format to frontend format with formatting
+      const loadedMessages = fullConv.messages.map(msg => ({
+        role: msg.role === 'human' ? 'human' : 'ai',
+        type: msg.metadata?.response_type || 'text',
+        // Apply formatting to AI messages
+        content: msg.role === 'ai' ? formatMessage(msg.content) : msg.content,
+        timestamp: new Date(msg.timestamp).toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit'
+        })
+      }));
+
+      setMessages(loadedMessages);
+      setCurrentConvId(conversation.id);
+      setIsFirstMessage(false);
+
+      toast.dismiss();
+      toast.success('Conversation loaded');
+
+    } catch (error) {
+      console.error('[LOAD_CONVERSATION]', error);
+      toast.dismiss();
+      // toast.error('Failed to load conversation');
     }
-    return newFeedback;
-  });
-  
-  playSound('click', settings.soundEffects);
-  
-  if (type !== null) {
-    toast.success('Thanks for your feedback!');
-    
-    const storedFeedback = JSON.parse(localStorage.getItem('aiFeedback') || '[]');
-    storedFeedback.push({
-      messageIndex,
-      type,
-      timestamp: new Date().toISOString(),
-      message: messages[messageIndex]?.content
+  };
+
+  const handleNewChat = () => {
+    setMessages([]);
+    setInput('');
+    setIsFirstMessage(true);
+    setFeedback({});
+    setCurrentConvId(null);
+    setCurrentConversationId(null);
+    setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
+    playSound('click', settings.soundEffects);
+  };
+
+  const handleFeedback = (messageIndex, type) => {
+    setFeedback(prev => {
+      const newFeedback = { ...prev };
+      if (newFeedback[messageIndex] === type) {
+        delete newFeedback[messageIndex];
+      } else {
+        newFeedback[messageIndex] = type;
+      }
+      return newFeedback;
     });
-    localStorage.setItem('aiFeedback', JSON.stringify(storedFeedback));
-  }
-};
+    
+    playSound('click', settings.soundEffects);
+    
+    if (type !== null) {
+      toast.success('Thanks for your feedback!');
+      
+      const storedFeedback = JSON.parse(localStorage.getItem('aiFeedback') || '[]');
+      storedFeedback.push({
+        messageIndex,
+        type,
+        timestamp: new Date().toISOString(),
+        message: messages[messageIndex]?.content
+      });
+      localStorage.setItem('aiFeedback', JSON.stringify(storedFeedback));
+    }
+  };
 
   const handleCopy = (content, index) => {
     const textToCopy = typeof content === 'string' 
@@ -356,6 +528,32 @@ const handleSuggestionClick = (suggestion) => {
     }
   };
 
+  const handleTellMeMore = async (messageIndex) => {
+    if (loading) {
+      toast.error('Please wait for AI to finish responding');
+      return;
+    }
+
+    playSound('click', settings.soundEffects);
+
+    const timestamp = new Date().toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    const tellMeMoreMessage = {
+      role: 'human',
+      type: 'text',
+      content: 'tell me more',
+      timestamp
+    };
+
+    const newMessages = [...messages, tellMeMoreMessage];
+    setMessages(newMessages);
+
+    await sendToAI(newMessages);
+  };
+
   const handleExportPDF = async () => {
     playSound('click', settings.soundEffects);
     toast.loading('Generating PDF...');
@@ -385,208 +583,2403 @@ const handleSuggestionClick = (suggestion) => {
   };
 
   return (
- <>
-    {/* <Toaster position="top-center" />
-    <MotivationalCard 
-      show={showMotivationalCard} 
-      onClose={() => setShowMotivationalCard(false)} 
-    /> */}
-    
-<main className={`fixed inset-0 flex flex-col transition-all duration-500 ${
-      settings.focusMode 
-        ? 'bg-gray-900' // ✅ Dark base for focus mode
-        : settings.bedtimeMode
-          ? `${BACKGROUND_MAP[previewBackground || settings.background]} brightness-75 saturate-50`
-          : BACKGROUND_MAP[previewBackground || settings.background]
-    }`}>
+    <>
+      <Toaster position="top-center" />
       
-      {/* Focus Mode Background - Dark Blurry Glass */}
-      {settings.focusMode && (
-        <div className="absolute inset-0 bg-gradient-to-br from-black/80 via-gray-900/70 to-black/80 backdrop-blur-3xl -z-10" />
-      )}
-      
-      {/* Focus Mode Background */}
-{/* Focus Mode Background - Premium Glass with Noise */}
-      {settings.focusMode && (
-        <>
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-3xl -z-10" />
-          <div 
-            className="absolute inset-0 opacity-[0.015] -z-10"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-              backgroundRepeat: 'repeat'
-            }}
-          />
-        </>
-      )}
+      <main className={`fixed inset-0 flex flex-col transition-all duration-500 ${
+        settings.focusMode 
+          ? 'bg-gray-900'
+          : settings.bedtimeMode
+            ? `${BACKGROUND_MAP[previewBackground || settings.background]} brightness-75 saturate-50`
+            : BACKGROUND_MAP[previewBackground || settings.background]
+      }`}>
+        
+        {/* Focus Mode Background */}
+        {settings.focusMode && (
+          <>
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-3xl -z-10" />
+            <div 
+              className="absolute inset-0 opacity-[0.015] -z-10"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'repeat'
+              }}
+            />
+          </>
+        )}
 
-      {/* Dark overlay for bedtime/dark mode */}
-      {settings.isDarkMode && !settings.focusMode && (
-        <div className="fixed inset-0 bg-black/80 z-0" />
-      )}
+        {/* Dark overlay for bedtime/dark mode */}
+        {settings.isDarkMode && !settings.focusMode && (
+          <div className="fixed inset-0 bg-black/80 z-0" />
+        )}
 
-      {/* Settings Modal */}
-      <SettingsModal
-        show={showSettings}
-        onClose={() => {
-          setShowSettings(false);
-          setPreviewBackground(null); // ✅ ADD THIS LINE
-        }}
-        settings={settings}
-        availableVoices={availableVoices}
-        playSound={(type) => playSound(type, settings.soundEffects)}
-        onPreviewBackground={handlePreviewBackground} // ✅ ADD THIS LINE
-      />
-
-      {/* Landing Screen */}
-      {isFirstMessage && (
-        <LandingScreen
-          greeting={getGreeting()}
-          gradientIndex={gradientIndex}
-          hoveredSuggestion={hoveredSuggestion}
-          setHoveredSuggestion={setHoveredSuggestion}
-          onSuggestionClick={handleSuggestionClick}
-          animationsEnabled={settings.animationsEnabled}
+        {/* Conversation Sidebar */}
+        <ConversationSidebar
+          isOpen={showSidebar}
+          onClose={() => setShowSidebar(false)}
+          onSelectConversation={handleSelectConversation}
+          onNewChat={handleNewChat}
+          currentConversationId={currentConversationId}
+          focusMode={settings.focusMode}
+          bedtimeMode={settings.bedtimeMode}
         />
-      )}
 
-      {/* Header - Pass bedtimeMode and focusMode */}
-{!isFirstMessage && (
-  <Header
-    onClearChat={handleClearChat}
-    onExportPDF={handleExportPDF}
-    // onOpenMotivation={() => setShowMotivationalCard(true)}
-    focusMode={settings.focusMode}
-    bedtimeMode={settings.bedtimeMode}
-    setFocusMode={settings.setFocusMode}
-    playSound={(type) => playSound(type, settings.soundEffects)}
-    currentBackground={previewBackground || settings.background}
-    onResetToLanding={() => { // ✅ ADD THIS
-      setMessages([]);
-      setInput('');
-      setIsFirstMessage(true);
-      setFeedback({});
-      playSound('click', settings.soundEffects);
-    }}
-  />
-)}
-
-      {/* Focus Mode Header */}
- {settings.focusMode && (
-        <motion.button
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => {
-            settings.setFocusMode(false);
-            playSound('click', settings.soundEffects);
-            toast.success('Focus mode disabled');
+        {/* Settings Modal */}
+        <SettingsModal
+          show={showSettings}
+          onClose={() => {
+            setShowSettings(false);
+            setPreviewBackground(null);
           }}
-          className="fixed top-5 right-5 bg-white/10 hover:bg-white/15 backdrop-blur-2xl border border-white/20 px-3 py-1.5 rounded-full text-white text-sm font-medium z-50 flex items-center gap-1.5 shadow-lg cursor-pointer transition-all"
-        >
-          <X className="w-4 h-4" />
-          <span>Exit</span>
-        </motion.button>
-      )}
+          settings={settings}
+          availableVoices={availableVoices}
+          playSound={(type) => playSound(type, settings.soundEffects)}
+          onPreviewBackground={handlePreviewBackground}
+        />
 
-      {/* Chat Section */}
-      {!isFirstMessage && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
-          className={`relative flex-grow overflow-y-auto px-4 md:px-5 py-6 space-y-5 scrollbar-hide ${
-            FONT_FAMILY_MAP[settings.fontFamily]
-          } ${FONT_SIZE_MAP[settings.fontSize]} ${
-            settings.fontWeight === 'bold' ? 'font-bold' : settings.fontWeight === 'italic' ? 'italic' : ''
-          } ${settings.focusMode ? 'z-10' : ''}`}
-        >
-          
-          {/* Session Date */}
-          <div className="flex justify-center mb-4">
-            <div className={`px-4 py-1 rounded-full text-xs font-medium ${
-              settings.focusMode 
-                ? 'bg-white/10 text-white backdrop-blur-md'
-                : settings.bedtimeMode
-                  ? 'bg-[#e0e5ec] shadow-[4px_4px_8px_#b8bdc4,-4px_-4px_8px_#ffffff] text-gray-700'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-            }`}>
-              {sessionDate}
-            </div>
-          </div>
+        {/* Landing Screen */}
+        {isFirstMessage && (
+          <LandingScreen
+            greeting={getGreeting()}
+            gradientIndex={gradientIndex}
+            hoveredSuggestion={hoveredSuggestion}
+            setHoveredSuggestion={setHoveredSuggestion}
+            onSuggestionClick={handleSuggestionClick}
+            animationsEnabled={settings.animationsEnabled}
+          />
+        )}
 
-          <AnimatePresence>
-            {messages.map((msg, idx) => (
-<ChatMessage
-  key={idx}
-  message={msg}
-  index={idx}
-  isUser={msg.role === 'human'}
-  feedback={feedback}
-  copiedIndex={copiedIndex}
-  speaking={speaking}
-  onFeedback={handleFeedback}
-  onCopy={handleCopy}
-  onSpeak={settings.ttsEnabled ? handleSpeak : () => toast.error('TTS is disabled')}
-  onShare={handleShare}
-  fontSizeMap={FONT_SIZE_MAP}
-  fontSize={settings.fontSize}
-  focusMode={settings.focusMode}
-  bedtimeMode={settings.bedtimeMode}
-  currentBackground={settings.background} // ✅ ADD THIS
-/>
-            ))}
-          </AnimatePresence>
+        {/* Header - includes sidebar toggle */}
+        {!isFirstMessage && !isMinimized && (
+          <Header
+            onClearChat={handleClearChat}
+            onExportPDF={handleExportPDF}
+            onOpenSettings={() => {
+              setShowSettings(true);
+              playSound('click', settings.soundEffects);
+            }}
+            focusMode={settings.focusMode}
+            bedtimeMode={settings.bedtimeMode}
+            setFocusMode={settings.setFocusMode}
+            playSound={(type) => playSound(type, settings.soundEffects)}
+            currentBackground={previewBackground || settings.background}
+            onResetToLanding={() => {
+              setMessages([]);
+              setInput('');
+              setIsFirstMessage(true);
+              setFeedback({});
+              playSound('click', settings.soundEffects);
+            }}
+            onMinimize={() => {
+              setIsMinimized(true);
+              playSound('click', settings.soundEffects);
+            }}
+            onOpenSidebar={() => setShowSidebar(true)}
+          />
+        )}
 
-          {loading && (
-            <div className="flex justify-start animate-pulse">
-              <div className={`px-4 md:px-5 py-3 rounded-2xl font-semibold shadow-md flex items-center gap-3 ${
+        {/* Focus Mode Exit Button */}
+        {settings.focusMode && !isMinimized && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => {
+              settings.setFocusMode(false);
+              playSound('click', settings.soundEffects);
+              toast.success('Focus mode disabled');
+            }}
+            className="fixed top-5 right-5 bg-white/10 hover:bg-white/15 backdrop-blur-2xl border border-white/20 px-3 py-1.5 rounded-full text-white text-sm font-medium z-50 flex items-center gap-1.5 shadow-lg cursor-pointer transition-all"
+          >
+            <X className="w-4 h-4" />
+            <span>Exit</span>
+          </motion.button>
+        )}
+
+        {/* Chat Section - reduced padding for viewport fit */}
+        {!isFirstMessage && !isMinimized && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className={`relative flex-grow overflow-y-auto px-3 md:px-4 py-3 space-y-3 scrollbar-hide ${
+              FONT_FAMILY_MAP[settings.fontFamily]
+            } ${FONT_SIZE_MAP[settings.fontSize]} ${
+              settings.fontWeight === 'bold' ? 'font-bold' : settings.fontWeight === 'italic' ? 'italic' : ''
+            } ${settings.focusMode ? 'z-10' : ''}`}
+          >
+            {/* Complementary bubble color background overlay */}
+            {!settings.focusMode && !settings.bedtimeMode && settings.bubbleColor && (
+              <div
+                className={`absolute inset-0 bg-gradient-to-br ${getChatBackground(settings.bubbleColor, settings.isDarkMode)} pointer-events-none -z-10`}
+              />
+            )}
+
+            {/* Session Date - compact */}
+            <div className="flex justify-center mb-2">
+              <div className={`px-3 py-0.5 rounded-full text-[11px] font-medium ${
                 settings.focusMode
                   ? 'bg-white/10 text-white backdrop-blur-md'
                   : settings.bedtimeMode
-                    ? 'bg-[#e0e5ec] shadow-[4px_4px_8px_#b8bdc4,-4px_-4px_8px_#ffffff] text-gray-700'
-                    : 'bg-gradient-to-r from-pink-400 via-purple-500 to-cyan-500 text-white'
+                    ? 'bg-[#e0e5ec] shadow-[2px_2px_4px_#b8bdc4,-2px_-2px_4px_#ffffff] text-gray-700'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
               }`}>
-                <svg className="w-5 h-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                </svg>
-                <span>🤔 AI Shine is thinking...</span>
+                {sessionDate}
               </div>
             </div>
-          )}
-<div ref={messagesEndRef} />
-        </motion.div>
-      )}
 
-      {/* Input Area */}
-      <InputArea
-        input={input}
-        setInput={setInput}
-        loading={loading}
-        listening={speechRecognition.listening}
-        isFirstMessage={isFirstMessage}
-        focusMode={settings.focusMode}
-        bedtimeMode={settings.bedtimeMode}
-        textareaRef={textareaRef}
-        fontFamilyMap={FONT_FAMILY_MAP}
-        fontFamily={settings.fontFamily}
-        fontSizeMap={FONT_SIZE_MAP}
-        fontSize={settings.fontSize}
-        onSend={sendMessage}
-        onToggleListening={toggleListening}
-        onOpenSettings={() => {
-          setShowSettings(true);
-          playSound('click', settings.soundEffects);
-        }}
-        onTextareaChange={handleTextareaChange}
-        animationsEnabled={settings.animationsEnabled}
-      />
-    </main>
-  </>
-);
+            <AnimatePresence>
+              {messages.map((msg, idx) => (
+                <ChatMessage
+                  key={idx}
+                  message={msg}
+                  index={idx}
+                  isUser={msg.role === 'human'}
+                  isStreaming={msg.isStreaming}
+                  feedback={feedback}
+                  copiedIndex={copiedIndex}
+                  speaking={speaking}
+                  onFeedback={handleFeedback}
+                  onCopy={handleCopy}
+                  onSpeak={settings.ttsEnabled ? handleSpeak : () => toast.error('TTS is disabled')}
+                  onShare={handleShare}
+                  onTellMeMore={handleTellMeMore}
+                  fontSizeMap={FONT_SIZE_MAP}
+                  fontSize={settings.fontSize}
+                  focusMode={settings.focusMode}
+                  bedtimeMode={settings.bedtimeMode}
+                  bubbleColor={settings.bubbleColor}
+                />
+              ))}
+            </AnimatePresence>
+
+            <div ref={messagesEndRef} />
+          </motion.div>
+        )}
+
+        {/* Input Area */}
+        {!isMinimized && (
+          <InputArea
+            input={input}
+            setInput={setInput}
+            loading={loading}
+            listening={speechRecognition.listening}
+            isFirstMessage={isFirstMessage}
+            focusMode={settings.focusMode}
+            bedtimeMode={settings.bedtimeMode}
+            textareaRef={textareaRef}
+            fontFamilyMap={FONT_FAMILY_MAP}
+            fontFamily={settings.fontFamily}
+            fontSizeMap={FONT_SIZE_MAP}
+            fontSize={settings.fontSize}
+            onSend={sendMessage}
+            onToggleListening={toggleListening}
+            onOpenSettings={() => {
+              setShowSettings(true);
+              playSound('click', settings.soundEffects);
+            }}
+            onTextareaChange={handleTextareaChange}
+            animationsEnabled={settings.animationsEnabled}
+          />
+        )}
+
+        {/* Minimized Chat Widget - has its own inline sidebar */}
+        <ChatWidget
+          isMinimized={isMinimized}
+          onToggle={() => {
+            setIsMinimized(false);
+            playSound('click', settings.soundEffects);
+          }}
+          onOpenSettings={() => {
+            setShowSettings(true);
+            playSound('click', settings.soundEffects);
+          }}
+          onSelectConversation={handleSelectConversation}
+          onNewChat={() => {
+            setMessages([]);
+            setInput('');
+            setIsFirstMessage(true);
+            setFeedback({});
+          }}
+          currentConversationId={currentConversationId}
+          bedtimeMode={settings.bedtimeMode}
+          messages={messages}
+          input={input}
+          setInput={setInput}
+          loading={loading}
+          listening={speechRecognition.listening}
+          onSend={sendMessage}
+          onToggleListening={toggleListening}
+        />
+      </main>
+    </>
+  );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // claude for streaming this is the one i use
+// "use client";
+
+// import { useState, useRef, useEffect } from "react";
+// import { Download, Focus } from "lucide-react";
+// import toast, { Toaster } from "react-hot-toast";
+// import FocusPlant from './components/FocusPlant';
+// // import MotivationalCard from './components/MotivationalCard';
+// import { motion } from "framer-motion";
+// import { 
+//   Settings, 
+//   Sun, 
+//   Moon, 
+//   Monitor,
+//   Palette,
+//   Type,
+//   Send,
+//   Mic,
+//   MicOff,
+//   Sparkles,
+//   ThumbsUp,
+//   ThumbsDown,
+//   Copy,
+//   Share2,
+//   Volume2,
+//   FileText,
+//   Zap,
+//   Check,
+// } from "lucide-react";
+// import { AnimatePresence } from "framer-motion";
+
+// // Components OUTSIDE chat
+// import Header from "./header_components/Header";
+
+// // Components INSIDE chat
+// import LandingScreen from "./components/LandingScreen";
+// import ChatMessage from "./components/ChatMessage";
+// import InputArea from "./components/InputArea";
+// import SettingsModal from "./components/SettingsModal";
+
+// // Hooks INSIDE chat
+// import { useSettings } from "./hooks/useSettings";
+// import { useTTS } from "./hooks/useTTS";
+// import { useSpeechRecognition } from "./hooks/useSpeechRecognition";
+// import { useConfetti } from "./hooks/useConfetti";
+// import {X } from "lucide-react"; 
+
+// // Utils INSIDE chat
+// import { playSound } from "./utils/soundEffects";
+// import { exportToPDF } from "./utils/exportHelpers";
+// import {
+//   FONT_SIZE_MAP,
+//   FONT_FAMILY_MAP,
+//   BACKGROUND_MAP,
+//   WELCOME_GRADIENTS,
+// } from "./utils/constants";
+
+
+// export default function Home() {
+//   // State
+//   const [messages, setMessages] = useState([]);
+//   const [input, setInput] = useState('');
+//   const [loading, setLoading] = useState(false);
+//   const [isFirstMessage, setIsFirstMessage] = useState(true);
+//   const [showSettings, setShowSettings] = useState(false);
+
+  
+//   const [streamingContent, setStreamingContent] = useState("");
+//   const fullStreamBuffer = useRef("");
+//   const isStreamingActive = useRef(false);
+//   const [sessionDate, setSessionDate] = useState('');
+//   const [gradientIndex, setGradientIndex] = useState(0);
+//   const [hoveredSuggestion, setHoveredSuggestion] = useState(null);
+//   const [feedback, setFeedback] = useState({});
+//   const [copiedIndex, setCopiedIndex] = useState(null);
+//   // const [showMotivationalCard, setShowMotivationalCard] = useState(false);
+//   const [previewBackground, setPreviewBackground] = useState(null);
+
+//   // Refs
+//   const messagesEndRef = useRef(null);
+//   const textareaRef = useRef(null);
+
+//   // Custom Hooks
+//   const settings = useSettings();
+//   const { speak, cancel, speaking, availableVoices } = useTTS(settings.ttsSettings, settings.selectedVoice);
+//   const speechRecognition = useSpeechRecognition();
+//   const { triggerCelebration } = useConfetti();
+
+//   // Initialize
+//   useEffect(() => {
+//     const today = new Date();
+//     const formattedDate = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+//     setSessionDate(formattedDate);
+//     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
+//   }, []);
+
+//   // Auto-scroll
+// useEffect(() => {
+//   if (settings.autoScroll && messagesEndRef.current) {
+//     messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+//   }
+// }, [messages, settings.autoScroll, streamingContent]);
+
+
+//   useEffect(() => {
+//   if (!isStreamingActive.current) return;
+
+//   const interval = setInterval(() => {
+//     setStreamingContent((prev) => {
+//       const target = fullStreamBuffer.current;
+//       if (prev.length >= target.length) return prev;
+
+//       const nextChunk = target.slice(prev.length, prev.length + 1);
+//       return prev + nextChunk;
+//     });
+//   }, 30);
+
+//   return () => clearInterval(interval);
+// }, [loading]);
+
+// useEffect(() => {
+//   if (loading && messages.length > 0) {
+//     setMessages((prev) => {
+//       const updated = [...prev];
+//       const lastIdx = updated.length - 1;
+//       if (updated[lastIdx]?.role === "ai" && updated[lastIdx]?.isStreaming) {
+//         updated[lastIdx].content = streamingContent;
+//       }
+//       return updated;
+//     });
+//   }
+// }, [streamingContent, loading]);
+
+//   // Focus textarea
+//   useEffect(() => {
+//     if (textareaRef.current && isFirstMessage) {
+//       textareaRef.current.focus();
+//     }
+//   }, [isFirstMessage]);
+
+//   // Handle speech recognition transcript
+//   useEffect(() => {
+//     if (speechRecognition.transcript) {
+//       setInput(prev => prev ? `${prev} ${speechRecognition.transcript}` : speechRecognition.transcript);
+//       speechRecognition.resetTranscript();
+//     }
+//   }, [speechRecognition.transcript]);
+
+//   const getGreeting = () => {
+//     const hour = new Date().getHours();
+//     if (settings.bedtimeMode) return 'Good evening';
+//     if (hour < 12) return 'Good morning';
+//     if (hour < 18) return 'Good afternoon';
+//     return 'Good evening';
+//   };
+// const handlePreviewBackground = (bg) => {
+//     setPreviewBackground(bg);
+//   };
+// // const handleSuggestionClick = (suggestion) => {
+// //     if (settings.animationsEnabled) { // ✅ ADD THIS CONDITION
+// //       triggerCelebration();
+// //     } // ✅ END CONDITION
+// const handleSuggestionClick = (suggestion) => {
+//   // Prevent clicking while AI is responding
+//   if (loading) {
+//     toast.error('Please wait for AI to finish responding');
+//     return;
+//   }
+  
+//   if (settings.animationsEnabled) {
+//     triggerCelebration();
+//   }
+//   playSound('success', settings.soundEffects);
+//   setInput(suggestion);
+  
+//   setTimeout(() => {
+//     if (!suggestion.trim()) return;
+//     setIsFirstMessage(false);
+    
+//     const timestamp = new Date().toLocaleTimeString('en-US', {
+//       hour: '2-digit',
+//       minute: '2-digit'
+//     });
+
+//     const userMessage = {
+//       role: 'human',
+//       type: 'text',
+//       content: suggestion,
+//       timestamp
+//     };
+
+//     const newMessages = [...messages, userMessage];
+//     setMessages(newMessages);
+//     setInput('');
+//     sendToAI(newMessages);
+//   }, 300);
+// };
+
+
+// const sendMessage = async () => {
+//   if (!input.trim()) return;
+  
+//   // Prevent sending while AI is still responding
+//   if (loading) {
+//     toast.error('Please wait for AI to finish responding');
+//     return;
+//   }
+
+//   playSound('send', settings.soundEffects);
+
+//   if (isFirstMessage) {
+//     setIsFirstMessage(false);
+//   }
+
+//   const timestamp = new Date().toLocaleTimeString('en-US', {
+//     hour: '2-digit',
+//     minute: '2-digit'
+//   });
+
+//   const userMessage = {
+//     role: 'human',
+//     type: 'text',
+//     content: input,
+//     timestamp
+//   };
+
+//   const newMessages = [...messages, userMessage];
+//   setMessages(newMessages);
+//   setInput('');
+  
+//   if (textareaRef.current) {
+//     textareaRef.current.style.height = 'auto';
+//   }
+
+//   await sendToAI(newMessages);
+// };
+
+
+//   // const [streamingIndex, setStreamingIndex] = useState(null);  //for streaming
+
+// async function sendToAI(chatHistory) {
+//   if (loading) return;
+//   setLoading(true);
+
+//   // Reset streaming state
+//   fullStreamBuffer.current = "";
+//   setStreamingContent("");
+//   isStreamingActive.current = true;
+
+//   const timestamp = new Date().toLocaleTimeString('en-US', {
+//     hour: '2-digit',
+//     minute: '2-digit'
+//   });
+
+//   // Add placeholder with isStreaming flag
+//   setMessages((prev) => [
+//     ...prev,
+//     {
+//       role: 'ai',
+//       type: 'text', 
+//       content: '',
+//       timestamp,
+//       isStreaming: true  // NEW: Enable gradient
+//     }
+//   ]);
+
+//   try {
+//     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
+//     const formattedMessages = chatHistory
+//       .filter((msg) => msg.type !== 'error')
+//       .map((msg) => ({
+//         role: msg.role,
+//         content: typeof msg.content === 'string' 
+//           ? msg.content 
+//           : msg.content?.answer || JSON.stringify(msg.content),
+//         type: msg.type || 'text',
+//       }));
+
+//     // CHANGED: Use /chat_stream endpoint
+//     const response = await fetch(`${backendUrl}/chat`, {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({ chat_history: formattedMessages }),
+//     });
+
+//     if (!response.ok) throw new Error(response.statusText);
+
+//     const reader = response.body.getReader();
+//     const decoder = new TextDecoder();
+//     let messageType = "text"; 
+
+//     while (true) {
+//       const { done, value } = await reader.read();
+//       if (done) break;
+
+//       const chunk = decoder.decode(value, { stream: true });
+//       const lines = chunk.split('\n');
+
+//       for (const line of lines) {
+//         if (!line.trim()) continue;
+
+//         try {
+//           const data = JSON.parse(line);
+
+//           if (data.answer_chunk) {
+//             // CHANGED: Append to buffer instead of directly to messages
+//             fullStreamBuffer.current += data.answer_chunk;
+//           }
+//           else if (data.answer) {
+//             fullStreamBuffer.current = data.answer;
+//             messageType = data.type || "text";
+//           }
+          
+//           if (data.type) messageType = data.type;
+
+//         } catch (e) {
+//           console.error("Error parsing JSON chunk", e);
+//         }
+//       }
+//     }
+
+//     playSound('success', settings.soundEffects);
+
+//   } catch (error) {
+//     console.error('[STREAMING_ERROR]', error);
+    
+//     setMessages((prev) => {
+//       const newArr = [...prev];
+//       const lastIndex = newArr.length - 1;
+//       newArr[lastIndex] = {
+//         ...newArr[lastIndex],
+//         role: 'ai',
+//         type: 'error',
+//         content: '⚠️ Connection lost. Please try again.',
+//         isStreaming: false
+//       };
+//       return newArr;
+//     });
+    
+//     toast.error('Connection interrupted');
+//   } finally {
+//   // Mark streaming as complete
+//   setMessages((prev) => {
+//     const updated = [...prev];
+//     const lastIdx = updated.length - 1;
+//     updated[lastIdx].content = fullStreamBuffer.current;
+//     updated[lastIdx].isStreaming = false;
+//     return updated;
+//   });
+
+//   isStreamingActive.current = false;
+//   setLoading(false);
+  
+//   // Smooth scroll to bottom after streaming completes
+//   setTimeout(() => {
+//     if (settings.autoScroll && messagesEndRef.current) {
+//       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+//     }
+//   }, 100);
+//   }}
+//   const markdownToHtml = (text) => {
+//     return text
+//       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // **bold**
+//       .replace(/\*(.*?)\*/g, '<em>$1</em>');             // *italic*
+//   };
+//   function parseStructuredAnswer(rawAnswer) {
+//     const parts = rawAnswer.split(/\*\*Key Points:\*\*|<strong>Key Points:<\/strong>/i);
+
+//     if (parts.length === 2) {
+//       const answerPart = parts[0].replace(/\*\*Answer:\*\*|<strong>Answer:<\/strong>/gi, '').trim();
+//       const keyPointsPart = parts[1].trim();
+
+//       const keyPoints = keyPointsPart
+//         .split(/\n|<li>/)
+//         .map((line) => line.replace(/<\/?[^>]+(>|$)/g, '').replace(/^[•\-\*]\s*/, '').trim())
+//         .filter(Boolean);
+
+//       return { answer: answerPart, keyPoints };
+//     }
+
+//     return { answer: rawAnswer, keyPoints: [] };
+//   }
+
+//   const handleTextareaChange = (e) => {
+//     setInput(e.target.value);
+//     const maxHeight = 200;
+//     e.target.style.height = 'auto';
+//     e.target.style.height = `${Math.min(e.target.scrollHeight, maxHeight)}px`;
+//     e.target.style.overflowY = e.target.scrollHeight > maxHeight ? 'auto' : 'hidden';
+//   };
+
+//   const handleClearChat = () => {
+//     setMessages([]);
+//     setInput('');
+//     setIsFirstMessage(true);
+//     setFeedback({});
+//     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
+//     playSound('click', settings.soundEffects);
+//     toast.success('Chat cleared!');
+//   };
+
+//   const handleFeedback = (messageIndex, type) => {
+//   setFeedback(prev => {
+//     const newFeedback = { ...prev };
+//     if (newFeedback[messageIndex] === type) {
+//       // Reset if clicking same button
+//       delete newFeedback[messageIndex];
+//     } else {
+//       newFeedback[messageIndex] = type;
+//     }
+//     return newFeedback;
+//   });
+  
+//   playSound('click', settings.soundEffects);
+  
+//   if (type !== null) {
+//     toast.success('Thanks for your feedback!');
+    
+//     const storedFeedback = JSON.parse(localStorage.getItem('aiFeedback') || '[]');
+//     storedFeedback.push({
+//       messageIndex,
+//       type,
+//       timestamp: new Date().toISOString(),
+//       message: messages[messageIndex]?.content
+//     });
+//     localStorage.setItem('aiFeedback', JSON.stringify(storedFeedback));
+//   }
+// };
+
+//   const handleCopy = (content, index) => {
+//     const textToCopy = typeof content === 'string' 
+//       ? content 
+//       : content.answer + '\n\nKey Points:\n' + content.keyPoints?.join('\n');
+//     navigator.clipboard.writeText(textToCopy.replace(/<[^>]*>/g, ''));
+//     setCopiedIndex(index);
+//     playSound('success', settings.soundEffects);
+//     toast.success('Copied to clipboard!');
+//     setTimeout(() => setCopiedIndex(null), 2000);
+//   };
+
+//   const handleSpeak = (content) => {
+//     if (speaking) {
+//       cancel();
+//     } else {
+//       const textToSpeak = typeof content === 'string' 
+//         ? content.replace(/<[^>]*>/g, '') 
+//         : content.answer.replace(/<[^>]*>/g, '') + '. Key Points: ' + content.keyPoints?.join('. ');
+//       speak(textToSpeak);
+//     }
+//   };
+
+//   const handleShare = async (content) => {
+//     playSound('click', settings.soundEffects);
+    
+//     if (navigator.share) {
+//       try {
+//         await navigator.share({
+//           title: 'AI Shine Response',
+//           text: typeof content === 'string' ? content.replace(/<[^>]*>/g, '') : content.answer.replace(/<[^>]*>/g, ''),
+//         });
+//         toast.success('Shared successfully!');
+//       } catch (error) {
+//         console.error('Error sharing:', error);
+//       }
+//     } else {
+//       toast.error('Sharing not supported on this browser');
+//     }
+//   };
+
+//   const handleExportPDF = async () => {
+//     playSound('click', settings.soundEffects);
+//     toast.loading('Generating PDF...');
+    
+//     try {
+//       await exportToPDF(messages, sessionDate);
+//       toast.dismiss();
+//       toast.success('PDF downloaded!');
+//     } catch (error) {
+//       toast.dismiss();
+//       toast.error('Failed to generate PDF');
+//       console.error('PDF error:', error);
+//     }
+//   };
+
+//   const toggleListening = () => {
+//     if (speechRecognition.listening) {
+//       speechRecognition.stopListening();
+//     } else {
+//       const started = speechRecognition.startListening();
+//       if (started) {
+//         playSound('click', settings.soundEffects);
+//       } else {
+//         toast.error('Speech recognition not supported in this browser. Try Chrome or Edge.');
+//       }
+//     }
+//   };
+
+//   return (
+//  <>
+//     {/* <Toaster position="top-center" />
+//     <MotivationalCard 
+//       show={showMotivationalCard} 
+//       onClose={() => setShowMotivationalCard(false)} 
+//     /> */}
+    
+// <main className={`fixed inset-0 flex flex-col transition-all duration-500 ${
+//       settings.focusMode 
+//         ? 'bg-gray-900' // ✅ Dark base for focus mode
+//         : settings.bedtimeMode
+//           ? `${BACKGROUND_MAP[previewBackground || settings.background]} brightness-75 saturate-50`
+//           : BACKGROUND_MAP[previewBackground || settings.background]
+//     }`}>
+      
+//       {/* Focus Mode Background - Dark Blurry Glass */}
+//       {settings.focusMode && (
+//         <div className="absolute inset-0 bg-gradient-to-br from-black/80 via-gray-900/70 to-black/80 backdrop-blur-3xl -z-10" />
+//       )}
+      
+//       {/* Focus Mode Background */}
+// {/* Focus Mode Background - Premium Glass with Noise */}
+//       {settings.focusMode && (
+//         <>
+//           <div className="absolute inset-0 bg-black/70 backdrop-blur-3xl -z-10" />
+//           <div 
+//             className="absolute inset-0 opacity-[0.015] -z-10"
+//             style={{
+//               backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+//               backgroundRepeat: 'repeat'
+//             }}
+//           />
+//         </>
+//       )}
+
+//       {/* Dark overlay for bedtime/dark mode */}
+//       {settings.isDarkMode && !settings.focusMode && (
+//         <div className="fixed inset-0 bg-black/80 z-0" />
+//       )}
+
+//       {/* Settings Modal */}
+//       <SettingsModal
+//         show={showSettings}
+//         onClose={() => {
+//           setShowSettings(false);
+//           setPreviewBackground(null); // ✅ ADD THIS LINE
+//         }}
+//         settings={settings}
+//         availableVoices={availableVoices}
+//         playSound={(type) => playSound(type, settings.soundEffects)}
+//         onPreviewBackground={handlePreviewBackground} // ✅ ADD THIS LINE
+//       />
+
+//       {/* Landing Screen */}
+//       {isFirstMessage && (
+//         <LandingScreen
+//           greeting={getGreeting()}
+//           gradientIndex={gradientIndex}
+//           hoveredSuggestion={hoveredSuggestion}
+//           setHoveredSuggestion={setHoveredSuggestion}
+//           onSuggestionClick={handleSuggestionClick}
+//           animationsEnabled={settings.animationsEnabled}
+//         />
+//       )}
+
+//       {/* Header - Pass bedtimeMode and focusMode */}
+// {!isFirstMessage && (
+//   <Header
+//     onClearChat={handleClearChat}
+//     onExportPDF={handleExportPDF}
+//     // onOpenMotivation={() => setShowMotivationalCard(true)}
+//     focusMode={settings.focusMode}
+//     bedtimeMode={settings.bedtimeMode}
+//     setFocusMode={settings.setFocusMode}
+//     playSound={(type) => playSound(type, settings.soundEffects)}
+//     currentBackground={previewBackground || settings.background}
+//     onResetToLanding={() => { // ✅ ADD THIS
+//       setMessages([]);
+//       setInput('');
+//       setIsFirstMessage(true);
+//       setFeedback({});
+//       playSound('click', settings.soundEffects);
+//     }}
+//   />
+// )}
+
+//       {/* Focus Mode Header */}
+//  {settings.focusMode && (
+//         <motion.button
+//           initial={{ opacity: 0, scale: 0.9 }}
+//           animate={{ opacity: 1, scale: 1 }}
+//           whileHover={{ scale: 1.02 }}
+//           whileTap={{ scale: 0.98 }}
+//           onClick={() => {
+//             settings.setFocusMode(false);
+//             playSound('click', settings.soundEffects);
+//             toast.success('Focus mode disabled');
+//           }}
+//           className="fixed top-5 right-5 bg-white/10 hover:bg-white/15 backdrop-blur-2xl border border-white/20 px-3 py-1.5 rounded-full text-white text-sm font-medium z-50 flex items-center gap-1.5 shadow-lg cursor-pointer transition-all"
+//         >
+//           <X className="w-4 h-4" />
+//           <span>Exit</span>
+//         </motion.button>
+//       )}
+
+//       {/* Chat Section */}
+//       {!isFirstMessage && (
+//         <motion.div
+//           initial={{ opacity: 0, scale: 0.95 }}
+//           animate={{ opacity: 1, scale: 1 }}
+//           transition={{ duration: 0.5, ease: "easeOut" }}
+//           className={`relative flex-grow overflow-y-auto px-4 md:px-5 py-6 space-y-5 scrollbar-hide ${
+//             FONT_FAMILY_MAP[settings.fontFamily]
+//           } ${FONT_SIZE_MAP[settings.fontSize]} ${
+//             settings.fontWeight === 'bold' ? 'font-bold' : settings.fontWeight === 'italic' ? 'italic' : ''
+//           } ${settings.focusMode ? 'z-10' : ''}`}
+//         >
+          
+//           {/* Session Date */}
+//           <div className="flex justify-center mb-4">
+//             <div className={`px-4 py-1 rounded-full text-xs font-medium ${
+//               settings.focusMode 
+//                 ? 'bg-white/10 text-white backdrop-blur-md'
+//                 : settings.bedtimeMode
+//                   ? 'bg-[#e0e5ec] shadow-[4px_4px_8px_#b8bdc4,-4px_-4px_8px_#ffffff] text-gray-700'
+//                   : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+//             }`}>
+//               {sessionDate}
+//             </div>
+//           </div>
+
+//           <AnimatePresence>
+// {messages.map((msg, idx) => (
+//   <ChatMessage
+//     key={idx}
+//     message={msg}
+//     index={idx}
+//     isUser={msg.role === 'human'}
+//     isStreaming={msg.isStreaming}  // ADD THIS LINE
+//     feedback={feedback}
+//     copiedIndex={copiedIndex}
+//     speaking={speaking}
+//     onFeedback={handleFeedback}
+//     onCopy={handleCopy}
+//     onSpeak={settings.ttsEnabled ? handleSpeak : () => toast.error('TTS is disabled')}
+//     onShare={handleShare}
+//     fontSizeMap={FONT_SIZE_MAP}
+//     fontSize={settings.fontSize}
+//     focusMode={settings.focusMode}
+//     bedtimeMode={settings.bedtimeMode}
+//     currentBackground={settings.background}
+//   />
+// ))}
+//           </AnimatePresence>
+
+//           {/* {loading && (
+//             <div className="flex justify-start animate-pulse">
+//               <div className={`px-4 md:px-5 py-3 rounded-2xl font-semibold shadow-md flex items-center gap-3 ${
+//                 settings.focusMode
+//                   ? 'bg-white/10 text-white backdrop-blur-md'
+//                   : settings.bedtimeMode
+//                     ? 'bg-[#e0e5ec] shadow-[4px_4px_8px_#b8bdc4,-4px_-4px_8px_#ffffff] text-gray-700'
+//                     : 'bg-gradient-to-r from-pink-400 via-purple-500 to-cyan-500 text-white'
+//               }`}>
+//                 <svg className="w-5 h-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+//                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+//                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+//                 </svg>
+//                 <span>🤔 AI Shine is thinking...</span>
+//               </div>
+//             </div>
+//           )} */}
+// <div ref={messagesEndRef} />
+//         </motion.div>
+//       )}
+
+//       {/* Input Area */}
+//       <InputArea
+//         input={input}
+//         setInput={setInput}
+//         loading={loading}
+//         listening={speechRecognition.listening}
+//         isFirstMessage={isFirstMessage}
+//         focusMode={settings.focusMode}
+//         bedtimeMode={settings.bedtimeMode}
+//         textareaRef={textareaRef}
+//         fontFamilyMap={FONT_FAMILY_MAP}
+//         fontFamily={settings.fontFamily}
+//         fontSizeMap={FONT_SIZE_MAP}
+//         fontSize={settings.fontSize}
+//         onSend={sendMessage}
+//         onToggleListening={toggleListening}
+//         onOpenSettings={() => {
+//           setShowSettings(true);
+//           playSound('click', settings.soundEffects);
+//         }}
+//         onTextareaChange={handleTextareaChange}
+//         animationsEnabled={settings.animationsEnabled}
+//       />
+//     </main>
+//   </>
+// );
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // claude page.js for live token streaming used with live token streaming chatmessage
+// "use client";
+
+// import { useState, useRef, useEffect } from "react";
+// import { Download, Focus } from "lucide-react";
+// import toast, { Toaster } from "react-hot-toast";
+// import FocusPlant from './components/FocusPlant';
+// // import MotivationalCard from './components/MotivationalCard';
+// import { motion } from "framer-motion";
+// import { 
+//   Settings, 
+//   Sun, 
+//   Moon, 
+//   Monitor,
+//   Palette,
+//   Type,
+//   Send,
+//   Mic,
+//   MicOff,
+//   Sparkles,
+//   ThumbsUp,
+//   ThumbsDown,
+//   Copy,
+//   Share2,
+//   Volume2,
+//   FileText,
+//   Zap,
+//   Check,
+// } from "lucide-react";
+// import { AnimatePresence } from "framer-motion";
+
+// // Components OUTSIDE chat
+// import Header from "./header_components/Header";
+
+// // Components INSIDE chat
+// import LandingScreen from "./components/LandingScreen";
+// import ChatMessage from "./components/ChatMessage";
+// import InputArea from "./components/InputArea";
+// import SettingsModal from "./components/SettingsModal";
+
+// // Hooks INSIDE chat
+// import { useSettings } from "./hooks/useSettings";
+// import { useTTS } from "./hooks/useTTS";
+// import { useSpeechRecognition } from "./hooks/useSpeechRecognition";
+// import { useConfetti } from "./hooks/useConfetti";
+// import {X } from "lucide-react"; 
+
+// // Utils INSIDE chat
+// import { playSound } from "./utils/soundEffects";
+// import { exportToPDF } from "./utils/exportHelpers";
+// import {
+//   FONT_SIZE_MAP,
+//   FONT_FAMILY_MAP,
+//   BACKGROUND_MAP,
+//   WELCOME_GRADIENTS,
+// } from "./utils/constants";
+
+
+// export default function Home() {
+//   // State
+//   const [messages, setMessages] = useState([]);
+//   const [input, setInput] = useState('');
+//   const [loading, setLoading] = useState(false);
+//   const [isFirstMessage, setIsFirstMessage] = useState(true);
+//   const [showSettings, setShowSettings] = useState(false);
+//   const [sessionDate, setSessionDate] = useState('');
+//   const [gradientIndex, setGradientIndex] = useState(0);
+//   const [hoveredSuggestion, setHoveredSuggestion] = useState(null);
+//   const [feedback, setFeedback] = useState({});
+//   const [copiedIndex, setCopiedIndex] = useState(null);
+//   // const [showMotivationalCard, setShowMotivationalCard] = useState(false);
+//   const [previewBackground, setPreviewBackground] = useState(null);
+//   const [streamingIndex, setStreamingIndex] = useState(null);  //for streaming
+
+//   // Refs
+//   const messagesEndRef = useRef(null);
+//   const textareaRef = useRef(null);
+
+//   // Custom Hooks
+//   const settings = useSettings();
+//   const { speak, cancel, speaking, availableVoices } = useTTS(settings.ttsSettings, settings.selectedVoice);
+//   const speechRecognition = useSpeechRecognition();
+//   const { triggerCelebration } = useConfetti();
+
+//   // Initialize
+//   useEffect(() => {
+//     const today = new Date();
+//     const formattedDate = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+//     setSessionDate(formattedDate);
+//     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
+//   }, []);
+
+//   // Auto-scroll
+//   useEffect(() => {
+//     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+//   }, [messages]);
+
+//   // Focus textarea
+//   useEffect(() => {
+//     if (textareaRef.current && isFirstMessage) {
+//       textareaRef.current.focus();
+//     }
+//   }, [isFirstMessage]);
+
+//   // Handle speech recognition transcript
+//   useEffect(() => {
+//     if (speechRecognition.transcript) {
+//       setInput(prev => prev ? `${prev} ${speechRecognition.transcript}` : speechRecognition.transcript);
+//       speechRecognition.resetTranscript();
+//     }
+//   }, [speechRecognition.transcript]);
+
+//   const getGreeting = () => {
+//     const hour = new Date().getHours();
+//     if (settings.bedtimeMode) return 'Good evening';
+//     if (hour < 12) return 'Good morning';
+//     if (hour < 18) return 'Good afternoon';
+//     return 'Good evening';
+//   };
+// const handlePreviewBackground = (bg) => {
+//     setPreviewBackground(bg);
+//   };
+// // const handleSuggestionClick = (suggestion) => {
+// //     if (settings.animationsEnabled) { // ✅ ADD THIS CONDITION
+// //       triggerCelebration();
+// //     } // ✅ END CONDITION
+// const handleSuggestionClick = (suggestion) => {
+//   // Prevent clicking while AI is responding
+//   if (loading) {
+//     toast.error('Please wait for AI to finish responding');
+//     return;
+//   }
+  
+//   if (settings.animationsEnabled) {
+//     triggerCelebration();
+//   }
+//   playSound('success', settings.soundEffects);
+//   setInput(suggestion);
+  
+//   setTimeout(() => {
+//     if (!suggestion.trim()) return;
+//     setIsFirstMessage(false);
+    
+//     const timestamp = new Date().toLocaleTimeString('en-US', {
+//       hour: '2-digit',
+//       minute: '2-digit'
+//     });
+
+//     const userMessage = {
+//       role: 'human',
+//       type: 'text',
+//       content: suggestion,
+//       timestamp
+//     };
+
+//     const newMessages = [...messages, userMessage];
+//     setMessages(newMessages);
+//     setInput('');
+//     sendToAI(newMessages);
+//   }, 300);
+// };
+
+
+// const sendMessage = async () => {
+//   if (!input.trim()) return;
+  
+//   // Prevent sending while AI is still responding
+//   if (loading) {
+//     toast.error('Please wait for AI to finish responding');
+//     return;
+//   }
+
+//   playSound('send', settings.soundEffects);
+
+//   if (isFirstMessage) {
+//     setIsFirstMessage(false);
+//   }
+
+//   const timestamp = new Date().toLocaleTimeString('en-US', {
+//     hour: '2-digit',
+//     minute: '2-digit'
+//   });
+
+//   const userMessage = {
+//     role: 'human',
+//     type: 'text',
+//     content: input,
+//     timestamp
+//   };
+
+//   const newMessages = [...messages, userMessage];
+//   setMessages(newMessages);
+//   setInput('');
+  
+//   if (textareaRef.current) {
+//     textareaRef.current.style.height = 'auto';
+//   }
+
+//   await sendToAI(newMessages);
+// };
+
+
+// async function sendToAI(newMessages) {
+//   // Prevent double-sends while already loading
+//   if (loading) {
+//     console.warn('[SEND_TO_AI] Already loading, ignoring request');
+//     return;
+//   }
+  
+//   setLoading(true);
+  
+//   try {
+//     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000/chat-v2-stream/';
+
+//     // Filter out error messages and empty AI responses before sending
+//     const formattedMessages = newMessages
+//       .filter((msg) => {
+//         if (msg.type === 'error') return false;
+//         if (msg.role === 'ai' && (!msg.content || msg.content === '')) return false;
+//         return true;
+//       })
+//       .map((msg) => ({
+//         role: msg.role,
+//         content: typeof msg.content === 'string' 
+//           ? msg.content 
+//           : msg.content?.answer || JSON.stringify(msg.content),
+//         type: msg.type || 'text',
+//       }));
+
+//     if (!formattedMessages.some(msg => msg.role === 'human')) {
+//       console.error('[SEND_TO_AI] No human messages to send');
+//       setLoading(false);
+//       return;
+//     }
+
+//     console.log('[SEND_TO_AI] Sending:', formattedMessages.length, 'messages');
+
+//     const res = await fetch(backendUrl, {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({ chat_history: formattedMessages }),
+//     });
+
+//     if (!res.ok) {
+//       throw new Error(`Backend returned ${res.status}`);
+//     }
+
+//     const reader = res.body.getReader();
+//     const decoder = new TextDecoder();
+    
+//     let accumulatedResponse = '';
+//     let responseType = 'text';
+    
+//     const timestamp = new Date().toLocaleTimeString('en-US', {
+//       hour: '2-digit',
+//       minute: '2-digit'
+//     });
+    
+//     // Create placeholder message and track its index for streaming indicator
+//     const newMessageIndex = newMessages.length;
+//     setStreamingIndex(newMessageIndex);
+    
+//     const placeholderMessage = {
+//       role: 'ai',
+//       type: 'text',
+//       content: '', // Empty - will be filled during streaming
+//       timestamp
+//     };
+    
+//     setMessages((prev) => [...prev, placeholderMessage]);
+
+//     while (true) {
+//       const { done, value } = await reader.read();
+      
+//       if (done) break;
+      
+//       const chunk = decoder.decode(value);
+//       const lines = chunk.split('\n');
+      
+//       for (const line of lines) {
+//         if (line.startsWith('data: ')) {
+//           try {
+//             const data = JSON.parse(line.slice(6));
+            
+//             if (data.content) {
+//               accumulatedResponse += data.content;
+              
+//               // Update message content in real-time
+//               setMessages((prevMessages) => {
+//                 const updated = [...prevMessages];
+//                 updated[updated.length - 1] = {
+//                   ...updated[updated.length - 1],
+//                   content: accumulatedResponse
+//                 };
+//                 return updated;
+//               });
+//             }
+            
+//             if (data.done) {
+//               responseType = data.type || 'text';
+//               // Clear streaming indicator
+//               setStreamingIndex(null);
+//               playSound('success', settings.soundEffects);
+//             }
+//           } catch (parseError) {
+//             console.error('[PARSE_ERROR]', parseError, 'Line:', line);
+//           }
+//         }
+//       }
+//     }
+    
+//     // Final update with proper type
+//     setMessages((prevMessages) => {
+//       const updated = [...prevMessages];
+//       const lastIndex = updated.length - 1;
+      
+//       if (responseType === 'structured') {
+//         const parsed = parseStructuredAnswer(accumulatedResponse);
+//         updated[lastIndex] = {
+//           ...updated[lastIndex],
+//           content: parsed,
+//           type: 'structured'
+//         };
+//       } else {
+//         updated[lastIndex] = {
+//           ...updated[lastIndex],
+//           content: accumulatedResponse || updated[lastIndex].content,
+//           type: responseType
+//         };
+//       }
+      
+//       return updated;
+//     });
+
+//   } catch (error) {
+//     console.error('[STREAMING_ERROR]', error);
+//     setStreamingIndex(null);
+    
+//     const timestamp = new Date().toLocaleTimeString('en-US', {
+//       hour: '2-digit',
+//       minute: '2-digit'
+//     });
+    
+//     setMessages((prev) => {
+//       const updated = [...prev];
+//       if (updated.length > 0 && 
+//           updated[updated.length - 1].role === 'ai' && 
+//           !updated[updated.length - 1].content) {
+//         updated.pop();
+//       }
+//       updated.push({
+//         role: 'ai',
+//         type: 'error',
+//         content: '⚠️ Oops! Couldn\'t connect to AI Shine\'s server.',
+//         timestamp
+//       });
+//       return updated;
+//     });
+    
+//     toast.error('Failed to connect to server');
+//   } finally {
+//     setLoading(false);
+//     setStreamingIndex(null);
+//   }
+// }
+
+//   const markdownToHtml = (text) => {
+//     return text
+//       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // **bold**
+//       .replace(/\*(.*?)\*/g, '<em>$1</em>');             // *italic*
+//   };
+//   function parseStructuredAnswer(rawAnswer) {
+//     const parts = rawAnswer.split(/\*\*Key Points:\*\*|<strong>Key Points:<\/strong>/i);
+
+//     if (parts.length === 2) {
+//       const answerPart = parts[0].replace(/\*\*Answer:\*\*|<strong>Answer:<\/strong>/gi, '').trim();
+//       const keyPointsPart = parts[1].trim();
+
+//       const keyPoints = keyPointsPart
+//         .split(/\n|<li>/)
+//         .map((line) => line.replace(/<\/?[^>]+(>|$)/g, '').replace(/^[•\-\*]\s*/, '').trim())
+//         .filter(Boolean);
+
+//       return { answer: answerPart, keyPoints };
+//     }
+
+//     return { answer: rawAnswer, keyPoints: [] };
+//   }
+
+//   const handleTextareaChange = (e) => {
+//     setInput(e.target.value);
+//     const maxHeight = 200;
+//     e.target.style.height = 'auto';
+//     e.target.style.height = `${Math.min(e.target.scrollHeight, maxHeight)}px`;
+//     e.target.style.overflowY = e.target.scrollHeight > maxHeight ? 'auto' : 'hidden';
+//   };
+
+//   const handleClearChat = () => {
+//     setMessages([]);
+//     setInput('');
+//     setIsFirstMessage(true);
+//     setFeedback({});
+//     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
+//     playSound('click', settings.soundEffects);
+//     toast.success('Chat cleared!');
+//   };
+
+//   const handleFeedback = (messageIndex, type) => {
+//   setFeedback(prev => {
+//     const newFeedback = { ...prev };
+//     if (newFeedback[messageIndex] === type) {
+//       // Reset if clicking same button
+//       delete newFeedback[messageIndex];
+//     } else {
+//       newFeedback[messageIndex] = type;
+//     }
+//     return newFeedback;
+//   });
+  
+//   playSound('click', settings.soundEffects);
+  
+//   if (type !== null) {
+//     toast.success('Thanks for your feedback!');
+    
+//     const storedFeedback = JSON.parse(localStorage.getItem('aiFeedback') || '[]');
+//     storedFeedback.push({
+//       messageIndex,
+//       type,
+//       timestamp: new Date().toISOString(),
+//       message: messages[messageIndex]?.content
+//     });
+//     localStorage.setItem('aiFeedback', JSON.stringify(storedFeedback));
+//   }
+// };
+
+//   const handleCopy = (content, index) => {
+//     const textToCopy = typeof content === 'string' 
+//       ? content 
+//       : content.answer + '\n\nKey Points:\n' + content.keyPoints?.join('\n');
+//     navigator.clipboard.writeText(textToCopy.replace(/<[^>]*>/g, ''));
+//     setCopiedIndex(index);
+//     playSound('success', settings.soundEffects);
+//     toast.success('Copied to clipboard!');
+//     setTimeout(() => setCopiedIndex(null), 2000);
+//   };
+
+//   const handleSpeak = (content) => {
+//     if (speaking) {
+//       cancel();
+//     } else {
+//       const textToSpeak = typeof content === 'string' 
+//         ? content.replace(/<[^>]*>/g, '') 
+//         : content.answer.replace(/<[^>]*>/g, '') + '. Key Points: ' + content.keyPoints?.join('. ');
+//       speak(textToSpeak);
+//     }
+//   };
+
+//   const handleShare = async (content) => {
+//     playSound('click', settings.soundEffects);
+    
+//     if (navigator.share) {
+//       try {
+//         await navigator.share({
+//           title: 'AI Shine Response',
+//           text: typeof content === 'string' ? content.replace(/<[^>]*>/g, '') : content.answer.replace(/<[^>]*>/g, ''),
+//         });
+//         toast.success('Shared successfully!');
+//       } catch (error) {
+//         console.error('Error sharing:', error);
+//       }
+//     } else {
+//       toast.error('Sharing not supported on this browser');
+//     }
+//   };
+
+//   const handleExportPDF = async () => {
+//     playSound('click', settings.soundEffects);
+//     toast.loading('Generating PDF...');
+    
+//     try {
+//       await exportToPDF(messages, sessionDate);
+//       toast.dismiss();
+//       toast.success('PDF downloaded!');
+//     } catch (error) {
+//       toast.dismiss();
+//       toast.error('Failed to generate PDF');
+//       console.error('PDF error:', error);
+//     }
+//   };
+
+//   const toggleListening = () => {
+//     if (speechRecognition.listening) {
+//       speechRecognition.stopListening();
+//     } else {
+//       const started = speechRecognition.startListening();
+//       if (started) {
+//         playSound('click', settings.soundEffects);
+//       } else {
+//         toast.error('Speech recognition not supported in this browser. Try Chrome or Edge.');
+//       }
+//     }
+//   };
+
+//   return (
+//  <>
+//     {/* <Toaster position="top-center" />
+//     <MotivationalCard 
+//       show={showMotivationalCard} 
+//       onClose={() => setShowMotivationalCard(false)} 
+//     /> */}
+    
+// <main className={`fixed inset-0 flex flex-col transition-all duration-500 ${
+//       settings.focusMode 
+//         ? 'bg-gray-900' // ✅ Dark base for focus mode
+//         : settings.bedtimeMode
+//           ? `${BACKGROUND_MAP[previewBackground || settings.background]} brightness-75 saturate-50`
+//           : BACKGROUND_MAP[previewBackground || settings.background]
+//     }`}>
+      
+//       {/* Focus Mode Background - Dark Blurry Glass */}
+//       {settings.focusMode && (
+//         <div className="absolute inset-0 bg-gradient-to-br from-black/80 via-gray-900/70 to-black/80 backdrop-blur-3xl -z-10" />
+//       )}
+      
+//       {/* Focus Mode Background */}
+// {/* Focus Mode Background - Premium Glass with Noise */}
+//       {settings.focusMode && (
+//         <>
+//           <div className="absolute inset-0 bg-black/70 backdrop-blur-3xl -z-10" />
+//           <div 
+//             className="absolute inset-0 opacity-[0.015] -z-10"
+//             style={{
+//               backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+//               backgroundRepeat: 'repeat'
+//             }}
+//           />
+//         </>
+//       )}
+
+//       {/* Dark overlay for bedtime/dark mode */}
+//       {settings.isDarkMode && !settings.focusMode && (
+//         <div className="fixed inset-0 bg-black/80 z-0" />
+//       )}
+
+//       {/* Settings Modal */}
+//       <SettingsModal
+//         show={showSettings}
+//         onClose={() => {
+//           setShowSettings(false);
+//           setPreviewBackground(null); // ✅ ADD THIS LINE
+//         }}
+//         settings={settings}
+//         availableVoices={availableVoices}
+//         playSound={(type) => playSound(type, settings.soundEffects)}
+//         onPreviewBackground={handlePreviewBackground} // ✅ ADD THIS LINE
+//       />
+
+//       {/* Landing Screen */}
+//       {isFirstMessage && (
+//         <LandingScreen
+//           greeting={getGreeting()}
+//           gradientIndex={gradientIndex}
+//           hoveredSuggestion={hoveredSuggestion}
+//           setHoveredSuggestion={setHoveredSuggestion}
+//           onSuggestionClick={handleSuggestionClick}
+//           animationsEnabled={settings.animationsEnabled}
+//         />
+//       )}
+
+//       {/* Header - Pass bedtimeMode and focusMode */}
+// {!isFirstMessage && (
+//   <Header
+//     onClearChat={handleClearChat}
+//     onExportPDF={handleExportPDF}
+//     // onOpenMotivation={() => setShowMotivationalCard(true)}
+//     focusMode={settings.focusMode}
+//     bedtimeMode={settings.bedtimeMode}
+//     setFocusMode={settings.setFocusMode}
+//     playSound={(type) => playSound(type, settings.soundEffects)}
+//     currentBackground={previewBackground || settings.background}
+//     onResetToLanding={() => { // ✅ ADD THIS
+//       setMessages([]);
+//       setInput('');
+//       setIsFirstMessage(true);
+//       setFeedback({});
+//       playSound('click', settings.soundEffects);
+//     }}
+//   />
+// )}
+
+//       {/* Focus Mode Header */}
+//  {settings.focusMode && (
+//         <motion.button
+//           initial={{ opacity: 0, scale: 0.9 }}
+//           animate={{ opacity: 1, scale: 1 }}
+//           whileHover={{ scale: 1.02 }}
+//           whileTap={{ scale: 0.98 }}
+//           onClick={() => {
+//             settings.setFocusMode(false);
+//             playSound('click', settings.soundEffects);
+//             toast.success('Focus mode disabled');
+//           }}
+//           className="fixed top-5 right-5 bg-white/10 hover:bg-white/15 backdrop-blur-2xl border border-white/20 px-3 py-1.5 rounded-full text-white text-sm font-medium z-50 flex items-center gap-1.5 shadow-lg cursor-pointer transition-all"
+//         >
+//           <X className="w-4 h-4" />
+//           <span>Exit</span>
+//         </motion.button>
+//       )}
+
+//       {/* Chat Section */}
+//       {!isFirstMessage && (
+//         <motion.div
+//           initial={{ opacity: 0, scale: 0.95 }}
+//           animate={{ opacity: 1, scale: 1 }}
+//           transition={{ duration: 0.5, ease: "easeOut" }}
+//           className={`relative flex-grow overflow-y-auto px-4 md:px-5 py-6 space-y-5 scrollbar-hide ${
+//             FONT_FAMILY_MAP[settings.fontFamily]
+//           } ${FONT_SIZE_MAP[settings.fontSize]} ${
+//             settings.fontWeight === 'bold' ? 'font-bold' : settings.fontWeight === 'italic' ? 'italic' : ''
+//           } ${settings.focusMode ? 'z-10' : ''}`}
+//         >
+          
+//           {/* Session Date */}
+//           <div className="flex justify-center mb-4">
+//             <div className={`px-4 py-1 rounded-full text-xs font-medium ${
+//               settings.focusMode 
+//                 ? 'bg-white/10 text-white backdrop-blur-md'
+//                 : settings.bedtimeMode
+//                   ? 'bg-[#e0e5ec] shadow-[4px_4px_8px_#b8bdc4,-4px_-4px_8px_#ffffff] text-gray-700'
+//                   : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+//             }`}>
+//               {sessionDate}
+//             </div>
+//           </div>
+
+//           <AnimatePresence>
+// {messages.map((msg, idx) => (
+//   <ChatMessage
+//     key={idx}
+//     message={msg}
+//     index={idx}
+//     isUser={msg.role === 'human'}
+//     feedback={feedback}
+//     copiedIndex={copiedIndex}
+//     speaking={speaking}
+//     onFeedback={handleFeedback}
+//     onCopy={handleCopy}
+//     onSpeak={settings.ttsEnabled ? handleSpeak : () => toast.error('TTS is disabled')}
+//     onShare={handleShare}
+//     fontSizeMap={FONT_SIZE_MAP}
+//     fontSize={settings.fontSize}
+//     focusMode={settings.focusMode}
+//     bedtimeMode={settings.bedtimeMode}
+//     currentBackground={settings.background}
+//     isStreaming={streamingIndex === idx}  // <-- ADD THIS LINE
+//   />
+//             ))}
+//           </AnimatePresence>
+
+//           {/* {loading && (
+//             <div className="flex justify-start animate-pulse">
+//               <div className={`px-4 md:px-5 py-3 rounded-2xl font-semibold shadow-md flex items-center gap-3 ${
+//                 settings.focusMode
+//                   ? 'bg-white/10 text-white backdrop-blur-md'
+//                   : settings.bedtimeMode
+//                     ? 'bg-[#e0e5ec] shadow-[4px_4px_8px_#b8bdc4,-4px_-4px_8px_#ffffff] text-gray-700'
+//                     : 'bg-gradient-to-r from-pink-400 via-purple-500 to-cyan-500 text-white'
+//               }`}>
+//                 <svg className="w-5 h-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+//                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+//                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+//                 </svg>
+//                 <span>🤔 AI Shine is thinking...</span>
+//               </div>
+//             </div>
+//           )} */}
+// <div ref={messagesEndRef} />
+//         </motion.div>
+//       )}
+
+//       {/* Input Area */}
+//       <InputArea
+//         input={input}
+//         setInput={setInput}
+//         loading={loading}
+//         listening={speechRecognition.listening}
+//         isFirstMessage={isFirstMessage}
+//         focusMode={settings.focusMode}
+//         bedtimeMode={settings.bedtimeMode}
+//         textareaRef={textareaRef}
+//         fontFamilyMap={FONT_FAMILY_MAP}
+//         fontFamily={settings.fontFamily}
+//         fontSizeMap={FONT_SIZE_MAP}
+//         fontSize={settings.fontSize}
+//         onSend={sendMessage}
+//         onToggleListening={toggleListening}
+//         onOpenSettings={() => {
+//           setShowSettings(true);
+//           playSound('click', settings.soundEffects);
+//         }}
+//         onTextareaChange={handleTextareaChange}
+//         animationsEnabled={settings.animationsEnabled}
+//       />
+//     </main>
+//   </>
+// );
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+// // claude
+// "use client";
+
+// import { useState, useRef, useEffect } from "react";
+// import { Download, Focus } from "lucide-react";
+// import toast, { Toaster } from "react-hot-toast";
+// import FocusPlant from './components/FocusPlant';
+// // import MotivationalCard from './components/MotivationalCard';
+// import { motion } from "framer-motion";
+// import { 
+//   Settings, 
+//   Sun, 
+//   Moon, 
+//   Monitor,
+//   Palette,
+//   Type,
+//   Send,
+//   Mic,
+//   MicOff,
+//   Sparkles,
+//   ThumbsUp,
+//   ThumbsDown,
+//   Copy,
+//   Share2,
+//   Volume2,
+//   FileText,
+//   Zap,
+//   Check,
+// } from "lucide-react";
+// import { AnimatePresence } from "framer-motion";
+
+// // Components OUTSIDE chat
+// import Header from "./header_components/Header";
+
+// // Components INSIDE chat
+// import LandingScreen from "./components/LandingScreen";
+// import ChatMessage from "./components/ChatMessage";
+// import InputArea from "./components/InputArea";
+// import SettingsModal from "./components/SettingsModal";
+
+// // Hooks INSIDE chat
+// import { useSettings } from "./hooks/useSettings";
+// import { useTTS } from "./hooks/useTTS";
+// import { useSpeechRecognition } from "./hooks/useSpeechRecognition";
+// import { useConfetti } from "./hooks/useConfetti";
+// import {X } from "lucide-react"; 
+
+// // Utils INSIDE chat
+// import { playSound } from "./utils/soundEffects";
+// import { exportToPDF } from "./utils/exportHelpers";
+// import {
+//   FONT_SIZE_MAP,
+//   FONT_FAMILY_MAP,
+//   BACKGROUND_MAP,
+//   WELCOME_GRADIENTS,
+// } from "./utils/constants";
+
+
+// export default function Home() {
+//   // State
+//   const [messages, setMessages] = useState([]);
+//   const [input, setInput] = useState('');
+//   const [loading, setLoading] = useState(false);
+//   const [isFirstMessage, setIsFirstMessage] = useState(true);
+//   const [showSettings, setShowSettings] = useState(false);
+//   const [sessionDate, setSessionDate] = useState('');
+//   const [gradientIndex, setGradientIndex] = useState(0);
+//   const [hoveredSuggestion, setHoveredSuggestion] = useState(null);
+//   const [feedback, setFeedback] = useState({});
+//   const [copiedIndex, setCopiedIndex] = useState(null);
+//   // const [showMotivationalCard, setShowMotivationalCard] = useState(false);
+//   const [previewBackground, setPreviewBackground] = useState(null);
+
+//   // Refs
+//   const messagesEndRef = useRef(null);
+//   const textareaRef = useRef(null);
+
+//   // Custom Hooks
+//   const settings = useSettings();
+//   const { speak, cancel, speaking, availableVoices } = useTTS(settings.ttsSettings, settings.selectedVoice);
+//   const speechRecognition = useSpeechRecognition();
+//   const { triggerCelebration } = useConfetti();
+
+//   // Initialize
+//   useEffect(() => {
+//     const today = new Date();
+//     const formattedDate = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+//     setSessionDate(formattedDate);
+//     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
+//   }, []);
+
+//   // Auto-scroll
+//   useEffect(() => {
+//     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+//   }, [messages]);
+
+//   // Focus textarea
+//   useEffect(() => {
+//     if (textareaRef.current && isFirstMessage) {
+//       textareaRef.current.focus();
+//     }
+//   }, [isFirstMessage]);
+
+//   // Handle speech recognition transcript
+//   useEffect(() => {
+//     if (speechRecognition.transcript) {
+//       setInput(prev => prev ? `${prev} ${speechRecognition.transcript}` : speechRecognition.transcript);
+//       speechRecognition.resetTranscript();
+//     }
+//   }, [speechRecognition.transcript]);
+
+//   const getGreeting = () => {
+//     const hour = new Date().getHours();
+//     if (settings.bedtimeMode) return 'Good evening';
+//     if (hour < 12) return 'Good morning';
+//     if (hour < 18) return 'Good afternoon';
+//     return 'Good evening';
+//   };
+// const handlePreviewBackground = (bg) => {
+//     setPreviewBackground(bg);
+//   };
+// // const handleSuggestionClick = (suggestion) => {
+// //     if (settings.animationsEnabled) { // ✅ ADD THIS CONDITION
+// //       triggerCelebration();
+// //     } // ✅ END CONDITION
+// const handleSuggestionClick = (suggestion) => {
+//   // Prevent clicking while AI is responding
+//   if (loading) {
+//     toast.error('Please wait for AI to finish responding');
+//     return;
+//   }
+  
+//   if (settings.animationsEnabled) {
+//     triggerCelebration();
+//   }
+//   playSound('success', settings.soundEffects);
+//   setInput(suggestion);
+  
+//   setTimeout(() => {
+//     if (!suggestion.trim()) return;
+//     setIsFirstMessage(false);
+    
+//     const timestamp = new Date().toLocaleTimeString('en-US', {
+//       hour: '2-digit',
+//       minute: '2-digit'
+//     });
+
+//     const userMessage = {
+//       role: 'human',
+//       type: 'text',
+//       content: suggestion,
+//       timestamp
+//     };
+
+//     const newMessages = [...messages, userMessage];
+//     setMessages(newMessages);
+//     setInput('');
+//     sendToAI(newMessages);
+//   }, 300);
+// };
+
+
+// const sendMessage = async () => {
+//   if (!input.trim()) return;
+  
+//   // Prevent sending while AI is still responding
+//   if (loading) {
+//     toast.error('Please wait for AI to finish responding');
+//     return;
+//   }
+
+//   playSound('send', settings.soundEffects);
+
+//   if (isFirstMessage) {
+//     setIsFirstMessage(false);
+//   }
+
+//   const timestamp = new Date().toLocaleTimeString('en-US', {
+//     hour: '2-digit',
+//     minute: '2-digit'
+//   });
+
+//   const userMessage = {
+//     role: 'human',
+//     type: 'text',
+//     content: input,
+//     timestamp
+//   };
+
+//   const newMessages = [...messages, userMessage];
+//   setMessages(newMessages);
+//   setInput('');
+  
+//   if (textareaRef.current) {
+//     textareaRef.current.style.height = 'auto';
+//   }
+
+//   await sendToAI(newMessages);
+// };
+
+
+//   // const [streamingIndex, setStreamingIndex] = useState(null);  //for streaming
+
+// async function sendToAI(chatHistory) {
+//   if (loading) return;
+//   setLoading(true);
+
+//   // 1. Add a placeholder AI message immediately
+//   const timestamp = new Date().toLocaleTimeString('en-US', {
+//     hour: '2-digit',
+//     minute: '2-digit'
+//   });
+
+//   // We add a temporary message with empty content to the state
+//   setMessages((prev) => [
+//     ...prev,
+//     {
+//       role: 'ai',
+//       type: 'text', 
+//       content: '', // Start empty
+//       timestamp
+//     }
+//   ]);
+
+//   try {
+//     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000/chat';
+
+//     // 2. Prepare the request (Same as before)
+//     const formattedMessages = chatHistory
+//       .filter((msg) => msg.type !== 'error')
+//       .map((msg) => ({
+//         role: msg.role,
+//         content: typeof msg.content === 'string' 
+//           ? msg.content 
+//           : msg.content?.answer || JSON.stringify(msg.content),
+//         type: msg.type || 'text',
+//       }));
+
+//     const response = await fetch(backendUrl, {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({ chat_history: formattedMessages }),
+//     });
+
+//     if (!response.ok) throw new Error(response.statusText);
+
+//     // 3. Setup Streaming Reader
+//     const reader = response.body.getReader();
+//     const decoder = new TextDecoder();
+//     let aiResponseText = ""; // Accumulator for the full HTML
+//     let messageType = "text"; 
+
+//     // 4. Read the stream loop
+//     while (true) {
+//       const { done, value } = await reader.read();
+//       if (done) break;
+
+//       const chunk = decoder.decode(value, { stream: true });
+//       // NDJSON: Split by newline to get individual JSON objects
+//       const lines = chunk.split('\n');
+
+//       for (const line of lines) {
+//         if (!line.trim()) continue; // Skip empty lines
+
+//         try {
+//           const data = JSON.parse(line);
+
+//           // CASE A: Token Chunk (Streaming text)
+//           if (data.answer_chunk) {
+//             aiResponseText += data.answer_chunk;
+            
+//             // Update the LAST message in the state with the new text
+//             setMessages((prev) => {
+//               const newArr = [...prev];
+//               const lastIndex = newArr.length - 1;
+//               newArr[lastIndex] = {
+//                 ...newArr[lastIndex],
+//                 content: aiResponseText, // Update content live
+//                 type: messageType
+//               };
+//               return newArr;
+//             });
+//           }
+          
+//           // CASE B: Metadata or Full Response (Greeting/Decline)
+//           else if (data.answer) {
+//              aiResponseText = data.answer; // Overwrite if it's a full pre-set answer
+//              messageType = data.type || "text";
+             
+//              setMessages((prev) => {
+//               const newArr = [...prev];
+//               const lastIndex = newArr.length - 1;
+//               newArr[lastIndex] = {
+//                 ...newArr[lastIndex],
+//                 content: aiResponseText,
+//                 type: messageType
+//               };
+//               return newArr;
+//             });
+//           }
+          
+//           // Capture type if sent separately
+//           if (data.type) messageType = data.type;
+
+//         } catch (e) {
+//           console.error("Error parsing JSON chunk", e);
+//         }
+//       }
+//     }
+
+//     playSound('success', settings.soundEffects);
+
+//   } catch (error) {
+//     console.error('[STREAMING_ERROR]', error);
+    
+//     // Replace the empty placeholder with an error message
+//     setMessages((prev) => {
+//       const newArr = [...prev];
+//       const lastIndex = newArr.length - 1;
+//       newArr[lastIndex] = {
+//         ...newArr[lastIndex],
+//         role: 'ai',
+//         type: 'error',
+//         content: '⚠️ Connection lost. Please try again.',
+//       };
+//       return newArr;
+//     });
+    
+//     toast.error('Connection interrupted');
+//   } finally {
+//     setLoading(false);
+//   }
+// }
+//   const markdownToHtml = (text) => {
+//     return text
+//       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // **bold**
+//       .replace(/\*(.*?)\*/g, '<em>$1</em>');             // *italic*
+//   };
+//   function parseStructuredAnswer(rawAnswer) {
+//     const parts = rawAnswer.split(/\*\*Key Points:\*\*|<strong>Key Points:<\/strong>/i);
+
+//     if (parts.length === 2) {
+//       const answerPart = parts[0].replace(/\*\*Answer:\*\*|<strong>Answer:<\/strong>/gi, '').trim();
+//       const keyPointsPart = parts[1].trim();
+
+//       const keyPoints = keyPointsPart
+//         .split(/\n|<li>/)
+//         .map((line) => line.replace(/<\/?[^>]+(>|$)/g, '').replace(/^[•\-\*]\s*/, '').trim())
+//         .filter(Boolean);
+
+//       return { answer: answerPart, keyPoints };
+//     }
+
+//     return { answer: rawAnswer, keyPoints: [] };
+//   }
+
+//   const handleTextareaChange = (e) => {
+//     setInput(e.target.value);
+//     const maxHeight = 200;
+//     e.target.style.height = 'auto';
+//     e.target.style.height = `${Math.min(e.target.scrollHeight, maxHeight)}px`;
+//     e.target.style.overflowY = e.target.scrollHeight > maxHeight ? 'auto' : 'hidden';
+//   };
+
+//   const handleClearChat = () => {
+//     setMessages([]);
+//     setInput('');
+//     setIsFirstMessage(true);
+//     setFeedback({});
+//     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
+//     playSound('click', settings.soundEffects);
+//     toast.success('Chat cleared!');
+//   };
+
+//   const handleFeedback = (messageIndex, type) => {
+//   setFeedback(prev => {
+//     const newFeedback = { ...prev };
+//     if (newFeedback[messageIndex] === type) {
+//       // Reset if clicking same button
+//       delete newFeedback[messageIndex];
+//     } else {
+//       newFeedback[messageIndex] = type;
+//     }
+//     return newFeedback;
+//   });
+  
+//   playSound('click', settings.soundEffects);
+  
+//   if (type !== null) {
+//     toast.success('Thanks for your feedback!');
+    
+//     const storedFeedback = JSON.parse(localStorage.getItem('aiFeedback') || '[]');
+//     storedFeedback.push({
+//       messageIndex,
+//       type,
+//       timestamp: new Date().toISOString(),
+//       message: messages[messageIndex]?.content
+//     });
+//     localStorage.setItem('aiFeedback', JSON.stringify(storedFeedback));
+//   }
+// };
+
+//   const handleCopy = (content, index) => {
+//     const textToCopy = typeof content === 'string' 
+//       ? content 
+//       : content.answer + '\n\nKey Points:\n' + content.keyPoints?.join('\n');
+//     navigator.clipboard.writeText(textToCopy.replace(/<[^>]*>/g, ''));
+//     setCopiedIndex(index);
+//     playSound('success', settings.soundEffects);
+//     toast.success('Copied to clipboard!');
+//     setTimeout(() => setCopiedIndex(null), 2000);
+//   };
+
+//   const handleSpeak = (content) => {
+//     if (speaking) {
+//       cancel();
+//     } else {
+//       const textToSpeak = typeof content === 'string' 
+//         ? content.replace(/<[^>]*>/g, '') 
+//         : content.answer.replace(/<[^>]*>/g, '') + '. Key Points: ' + content.keyPoints?.join('. ');
+//       speak(textToSpeak);
+//     }
+//   };
+
+//   const handleShare = async (content) => {
+//     playSound('click', settings.soundEffects);
+    
+//     if (navigator.share) {
+//       try {
+//         await navigator.share({
+//           title: 'AI Shine Response',
+//           text: typeof content === 'string' ? content.replace(/<[^>]*>/g, '') : content.answer.replace(/<[^>]*>/g, ''),
+//         });
+//         toast.success('Shared successfully!');
+//       } catch (error) {
+//         console.error('Error sharing:', error);
+//       }
+//     } else {
+//       toast.error('Sharing not supported on this browser');
+//     }
+//   };
+
+//   const handleExportPDF = async () => {
+//     playSound('click', settings.soundEffects);
+//     toast.loading('Generating PDF...');
+    
+//     try {
+//       await exportToPDF(messages, sessionDate);
+//       toast.dismiss();
+//       toast.success('PDF downloaded!');
+//     } catch (error) {
+//       toast.dismiss();
+//       toast.error('Failed to generate PDF');
+//       console.error('PDF error:', error);
+//     }
+//   };
+
+//   const toggleListening = () => {
+//     if (speechRecognition.listening) {
+//       speechRecognition.stopListening();
+//     } else {
+//       const started = speechRecognition.startListening();
+//       if (started) {
+//         playSound('click', settings.soundEffects);
+//       } else {
+//         toast.error('Speech recognition not supported in this browser. Try Chrome or Edge.');
+//       }
+//     }
+//   };
+
+//   return (
+//  <>
+//     {/* <Toaster position="top-center" />
+//     <MotivationalCard 
+//       show={showMotivationalCard} 
+//       onClose={() => setShowMotivationalCard(false)} 
+//     /> */}
+    
+// <main className={`fixed inset-0 flex flex-col transition-all duration-500 ${
+//       settings.focusMode 
+//         ? 'bg-gray-900' // ✅ Dark base for focus mode
+//         : settings.bedtimeMode
+//           ? `${BACKGROUND_MAP[previewBackground || settings.background]} brightness-75 saturate-50`
+//           : BACKGROUND_MAP[previewBackground || settings.background]
+//     }`}>
+      
+//       {/* Focus Mode Background - Dark Blurry Glass */}
+//       {settings.focusMode && (
+//         <div className="absolute inset-0 bg-gradient-to-br from-black/80 via-gray-900/70 to-black/80 backdrop-blur-3xl -z-10" />
+//       )}
+      
+//       {/* Focus Mode Background */}
+// {/* Focus Mode Background - Premium Glass with Noise */}
+//       {settings.focusMode && (
+//         <>
+//           <div className="absolute inset-0 bg-black/70 backdrop-blur-3xl -z-10" />
+//           <div 
+//             className="absolute inset-0 opacity-[0.015] -z-10"
+//             style={{
+//               backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+//               backgroundRepeat: 'repeat'
+//             }}
+//           />
+//         </>
+//       )}
+
+//       {/* Dark overlay for bedtime/dark mode */}
+//       {settings.isDarkMode && !settings.focusMode && (
+//         <div className="fixed inset-0 bg-black/80 z-0" />
+//       )}
+
+//       {/* Settings Modal */}
+//       <SettingsModal
+//         show={showSettings}
+//         onClose={() => {
+//           setShowSettings(false);
+//           setPreviewBackground(null); // ✅ ADD THIS LINE
+//         }}
+//         settings={settings}
+//         availableVoices={availableVoices}
+//         playSound={(type) => playSound(type, settings.soundEffects)}
+//         onPreviewBackground={handlePreviewBackground} // ✅ ADD THIS LINE
+//       />
+
+//       {/* Landing Screen */}
+//       {isFirstMessage && (
+//         <LandingScreen
+//           greeting={getGreeting()}
+//           gradientIndex={gradientIndex}
+//           hoveredSuggestion={hoveredSuggestion}
+//           setHoveredSuggestion={setHoveredSuggestion}
+//           onSuggestionClick={handleSuggestionClick}
+//           animationsEnabled={settings.animationsEnabled}
+//         />
+//       )}
+
+//       {/* Header - Pass bedtimeMode and focusMode */}
+// {!isFirstMessage && (
+//   <Header
+//     onClearChat={handleClearChat}
+//     onExportPDF={handleExportPDF}
+//     // onOpenMotivation={() => setShowMotivationalCard(true)}
+//     focusMode={settings.focusMode}
+//     bedtimeMode={settings.bedtimeMode}
+//     setFocusMode={settings.setFocusMode}
+//     playSound={(type) => playSound(type, settings.soundEffects)}
+//     currentBackground={previewBackground || settings.background}
+//     onResetToLanding={() => { // ✅ ADD THIS
+//       setMessages([]);
+//       setInput('');
+//       setIsFirstMessage(true);
+//       setFeedback({});
+//       playSound('click', settings.soundEffects);
+//     }}
+//   />
+// )}
+
+//       {/* Focus Mode Header */}
+//  {settings.focusMode && (
+//         <motion.button
+//           initial={{ opacity: 0, scale: 0.9 }}
+//           animate={{ opacity: 1, scale: 1 }}
+//           whileHover={{ scale: 1.02 }}
+//           whileTap={{ scale: 0.98 }}
+//           onClick={() => {
+//             settings.setFocusMode(false);
+//             playSound('click', settings.soundEffects);
+//             toast.success('Focus mode disabled');
+//           }}
+//           className="fixed top-5 right-5 bg-white/10 hover:bg-white/15 backdrop-blur-2xl border border-white/20 px-3 py-1.5 rounded-full text-white text-sm font-medium z-50 flex items-center gap-1.5 shadow-lg cursor-pointer transition-all"
+//         >
+//           <X className="w-4 h-4" />
+//           <span>Exit</span>
+//         </motion.button>
+//       )}
+
+//       {/* Chat Section */}
+//       {!isFirstMessage && (
+//         <motion.div
+//           initial={{ opacity: 0, scale: 0.95 }}
+//           animate={{ opacity: 1, scale: 1 }}
+//           transition={{ duration: 0.5, ease: "easeOut" }}
+//           className={`relative flex-grow overflow-y-auto px-4 md:px-5 py-6 space-y-5 scrollbar-hide ${
+//             FONT_FAMILY_MAP[settings.fontFamily]
+//           } ${FONT_SIZE_MAP[settings.fontSize]} ${
+//             settings.fontWeight === 'bold' ? 'font-bold' : settings.fontWeight === 'italic' ? 'italic' : ''
+//           } ${settings.focusMode ? 'z-10' : ''}`}
+//         >
+          
+//           {/* Session Date */}
+//           <div className="flex justify-center mb-4">
+//             <div className={`px-4 py-1 rounded-full text-xs font-medium ${
+//               settings.focusMode 
+//                 ? 'bg-white/10 text-white backdrop-blur-md'
+//                 : settings.bedtimeMode
+//                   ? 'bg-[#e0e5ec] shadow-[4px_4px_8px_#b8bdc4,-4px_-4px_8px_#ffffff] text-gray-700'
+//                   : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+//             }`}>
+//               {sessionDate}
+//             </div>
+//           </div>
+
+//           <AnimatePresence>
+// {messages.map((msg, idx) => (
+//   <ChatMessage
+//     key={idx}
+//     message={msg}
+//     index={idx}
+//     isUser={msg.role === 'human'}
+//     feedback={feedback}
+//     copiedIndex={copiedIndex}
+//     speaking={speaking}
+//     onFeedback={handleFeedback}
+//     onCopy={handleCopy}
+//     onSpeak={settings.ttsEnabled ? handleSpeak : () => toast.error('TTS is disabled')}
+//     onShare={handleShare}
+//     fontSizeMap={FONT_SIZE_MAP}
+//     fontSize={settings.fontSize}
+//     focusMode={settings.focusMode}
+//     bedtimeMode={settings.bedtimeMode}
+//     currentBackground={settings.background}
+//   />
+//             ))}
+//           </AnimatePresence>
+
+//           {loading && (
+//             <div className="flex justify-start animate-pulse">
+//               <div className={`px-4 md:px-5 py-3 rounded-2xl font-semibold shadow-md flex items-center gap-3 ${
+//                 settings.focusMode
+//                   ? 'bg-white/10 text-white backdrop-blur-md'
+//                   : settings.bedtimeMode
+//                     ? 'bg-[#e0e5ec] shadow-[4px_4px_8px_#b8bdc4,-4px_-4px_8px_#ffffff] text-gray-700'
+//                     : 'bg-gradient-to-r from-pink-400 via-purple-500 to-cyan-500 text-white'
+//               }`}>
+//                 <svg className="w-5 h-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+//                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+//                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+//                 </svg>
+//                 <span>🤔 AI Shine is thinking...</span>
+//               </div>
+//             </div>
+//           )}
+// <div ref={messagesEndRef} />
+//         </motion.div>
+//       )}
+
+//       {/* Input Area */}
+//       <InputArea
+//         input={input}
+//         setInput={setInput}
+//         loading={loading}
+//         listening={speechRecognition.listening}
+//         isFirstMessage={isFirstMessage}
+//         focusMode={settings.focusMode}
+//         bedtimeMode={settings.bedtimeMode}
+//         textareaRef={textareaRef}
+//         fontFamilyMap={FONT_FAMILY_MAP}
+//         fontFamily={settings.fontFamily}
+//         fontSizeMap={FONT_SIZE_MAP}
+//         fontSize={settings.fontSize}
+//         onSend={sendMessage}
+//         onToggleListening={toggleListening}
+//         onOpenSettings={() => {
+//           setShowSettings(true);
+//           playSound('click', settings.soundEffects);
+//         }}
+//         onTextareaChange={handleTextareaChange}
+//         animationsEnabled={settings.animationsEnabled}
+//       />
+//     </main>
+//   </>
+// );
+// }
 
 
 
@@ -944,6 +3337,14 @@ const handleSuggestionClick = (suggestion) => {
 //     </main>
 //   );
 // }
+
+
+
+
+
+
+
+
 
 
 
@@ -1331,6 +3732,7 @@ const handleSuggestionClick = (suggestion) => {
 //     </main>
 //   );
 // }
+
 
 
 

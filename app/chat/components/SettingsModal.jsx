@@ -13,7 +13,7 @@ import {
   Film
 } from 'lucide-react';
 import { useState } from 'react';
-import { BACKGROUND_MAP } from '../utils/constants';
+import { BACKGROUND_MAP, CHAT_BUBBLE_COLORS } from '../utils/constants';
 
 const SETTINGS_CATEGORIES = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
@@ -94,7 +94,8 @@ export default function SettingsModal({
     ttsEnabled, setTtsEnabled,
     ttsSettings, setTtsSettings,
     selectedVoice, setSelectedVoice,
-    isDarkMode
+    isDarkMode,
+    bubbleColor, setBubbleColor
   } = settings;
 
   const glassStyle = !bedtimeMode
@@ -172,81 +173,120 @@ export default function SettingsModal({
               </div>
 
               {/* Appearance Settings */}
-              {activeCategory === 'appearance' && (
-                <div className="space-y-6">
-                  {/* Theme */}
-                  <div>
-                    <div className="flex items-center mb-3">
-                      <label className={`text-sm font-semibold ${labelColor}`}>Theme</label>
-                      <Tooltip text={TOOLTIPS.theme} />
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      {[
-                        { value: 'light', icon: Sun, label: 'Light' },
-                        { value: 'dark', icon: Moon, label: 'Dark' },
-                        { value: 'system', icon: Monitor, label: 'System' }
-                      ].map((t) => (
-                        <button
-                          key={t.value}
-                          onClick={() => {
-                            setTheme(t.value);
-                            playSound('click');
-                          }}
-                          className={`flex flex-col items-center gap-2 p-4 rounded-xl transition-all cursor-pointer ${
-                            theme === t.value
-                              ? bedtimeMode
-                                ? 'bg-[#e0e5ec] shadow-[inset_4px_4px_8px_#b8bdc4,inset_-4px_-4px_8px_#ffffff] text-[#1a0f08]'
-                                : 'border-2 border-purple-500 bg-purple-50 dark:bg-purple-900/20'
-                              : `${buttonGlassStyle} ${bedtimeMode ? 'text-[#1a0f08]' : ''}`
-                          }`}
-                        >
-                          <t.icon className={`w-6 h-6 ${bedtimeMode ? 'text-[#1a0f08]' : ''}`} />
-                          <span className="text-xs font-medium">{t.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+{activeCategory === 'appearance' && (
+  <div className="space-y-6">
+    {/* Theme */}
+    <div>
+      <div className="flex items-center mb-3">
+        <label className={`text-sm font-semibold ${labelColor}`}>Theme</label>
+        <Tooltip text={TOOLTIPS.theme} />
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { value: 'light', icon: Sun, label: 'Light' },
+          { value: 'dark', icon: Moon, label: 'Dark' },
+          { value: 'system', icon: Monitor, label: 'System' }
+        ].map((t) => (
+          <button
+            key={t.value}
+            onClick={() => {
+              setTheme(t.value);
+              playSound('click');
+            }}
+            className={`flex flex-col items-center gap-2 p-4 rounded-xl transition-all cursor-pointer ${
+              theme === t.value
+                ? bedtimeMode
+                  ? 'bg-[#e0e5ec] shadow-[inset_4px_4px_8px_#b8bdc4,inset_-4px_-4px_8px_#ffffff] text-[#1a0f08]'
+                  : 'border-2 border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                : `${buttonGlassStyle} ${bedtimeMode ? 'text-[#1a0f08]' : ''}`
+            }`}
+          >
+            <t.icon className={`w-6 h-6 ${bedtimeMode ? 'text-[#1a0f08]' : ''}`} />
+            <span className="text-xs font-medium">{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
 
-                  {/* Background */}
-                  <div>
-                    <div className="flex items-center mb-3">
-                      <label className={`text-sm font-semibold ${labelColor}`}>Background</label>
-                      <Tooltip text={TOOLTIPS.background} />
-                    </div>
+    {/* Chat Bubble Colors */}
+    <div>
+      <div className="flex items-center mb-3">
+        <label className={`text-sm font-semibold ${labelColor}`}>Chat Bubble Color</label>
+        <Tooltip text="Choose your preferred chat bubble color scheme. User bubbles will use the selected color, AI bubbles will use a complementary shade." />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {Object.entries(CHAT_BUBBLE_COLORS).map(([key, palette]) => (
+          <button
+            key={key}
+            onClick={() => {
+              setBubbleColor(key);
+              playSound('click');
+            }}
+            className={`p-3 rounded-xl transition-all cursor-pointer relative overflow-hidden ${
+              bubbleColor === key
+                ? bedtimeMode
+                  ? 'bg-[#e0e5ec] shadow-[inset_4px_4px_8px_#b8bdc4,inset_-4px_-4px_8px_#ffffff] text-[#1a0f08] ring-2 ring-gray-400'
+                  : 'border-2 border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                : `${buttonGlassStyle} ${bedtimeMode ? 'text-[#1a0f08]' : ''}`
+            }`}
+          >
+            {/* Color preview */}
+            <div className="flex items-center gap-2 mb-2">
+              <div
+                className="w-6 h-6 rounded-full border-2 border-gray-300"
+                style={{ backgroundColor: palette.user }}
+              />
+              <div
+                className="w-6 h-6 rounded-full border-2 border-gray-300"
+                style={{ backgroundColor: palette.ai }}
+              />
+            </div>
+            <span className="text-sm font-medium relative z-10">{palette.name}</span>
+          </button>
+        ))}
+      </div>
+    </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { value: 'moon', label: 'Moon' },
-                        { value: 'ocean', label: 'Ocean' },
-                        { value: 'beach', label: 'Beach' },
-                        { value: 'forest', label: 'Forest' },
-                        { value: 'sunset', label: 'Sunset' },
-                        { value: 'twilight', label: 'Twilight' }
-                      ].map((bg) => (
-                        <button
-                          key={bg.value}
-                          onClick={() => {
-                            setBackground(bg.value);
-                            playSound('click');
-                          }}
-                          onMouseEnter={() => onPreviewBackground(bg.value)}
-                          onMouseLeave={() => onPreviewBackground(background)}
-                          className={`p-3 rounded-xl transition-all cursor-pointer relative overflow-hidden ${
-                            background === bg.value
-                              ? bedtimeMode
-                                ? 'bg-[#e0e5ec] shadow-[inset_4px_4px_8px_#b8bdc4,inset_-4px_-4px_8px_#ffffff] text-[#1a0f08]'
-                                : 'border-2 border-purple-500 bg-purple-50 dark:bg-purple-900/20'
-                              : `${buttonGlassStyle} ${bedtimeMode ? 'text-[#1a0f08]' : ''}`
-                          }`}
-                        >
-                          <div className={`absolute inset-0 opacity-20 ${BACKGROUND_MAP[bg.value]}`} />
-                          <span className="text-sm font-medium relative z-10">{bg.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+    {/* Background */}
+    <div>
+      <div className="flex items-center mb-3">
+        <label className={`text-sm font-semibold ${labelColor}`}>Background</label>
+        <Tooltip text={TOOLTIPS.background} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          { value: 'moon', label: 'Moon' },
+          { value: 'ocean', label: 'Ocean' },
+          { value: 'beach', label: 'Beach' },
+          { value: 'forest', label: 'Forest' },
+          { value: 'sunset', label: 'Sunset' },
+          { value: 'twilight', label: 'Twilight' }
+        ].map((bg) => (
+          <button
+            key={bg.value}
+            onClick={() => {
+              setBackground(bg.value);
+              playSound('click');
+            }}
+            onMouseEnter={() => onPreviewBackground(bg.value)}
+            onMouseLeave={() => onPreviewBackground(background)}
+            className={`p-3 rounded-xl transition-all cursor-pointer relative overflow-hidden ${
+              background === bg.value
+                ? bedtimeMode
+                  ? 'bg-[#e0e5ec] shadow-[inset_4px_4px_8px_#b8bdc4,inset_-4px_-4px_8px_#ffffff] text-[#1a0f08]'
+                  : 'border-2 border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                : `${buttonGlassStyle} ${bedtimeMode ? 'text-[#1a0f08]' : ''}`
+            }`}
+          >
+            <div className={`absolute inset-0 opacity-20 ${BACKGROUND_MAP[bg.value]}`} />
+            <span className="text-sm font-medium relative z-10">{bg.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  </div>
+)}
 
               {/* Accessibility Settings */}
               {activeCategory === 'accessibility' && (
