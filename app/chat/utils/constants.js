@@ -185,8 +185,6 @@
 
 
 
-
-
 // ============================================================================
 // AI SHINE CHAT CONSTANTS
 // Complete configuration for themes, colors, fonts, and UI elements
@@ -223,14 +221,19 @@ export const FONT_FAMILY_MAP = {
 
 // ----------------------------------------------------------------------------
 // BACKGROUND THEMES
+// FIX: Changed from Tailwind class strings to real CSS gradient values.
+// These must be CSS values because they are used in:
+//   (a) style={{ background: BACKGROUND_MAP[key] }} in SettingsModal previews
+//   (b) style={{ background: BACKGROUND_MAP[background] }} on the main page container
+// Tailwind class strings cannot be used in inline `style` props.
 // ----------------------------------------------------------------------------
 export const BACKGROUND_MAP = {
-  moon: "bg-[#c9c9c9] [background:radial-gradient(circle,_rgba(201,201,201,1)_0%,_rgba(112,112,112,1)_100%)]",
-  ocean: "bg-gradient-to-r from-[hsl(210,90%,80%)] to-[hsl(212,93%,49%)]",
-  beach: "bg-gradient-to-r from-[hsl(40,63%,85%)] to-[hsl(22,94%,79%)]",
-  forest: "bg-gradient-to-r from-[hsl(165,89%,31%)] to-[hsl(161,46%,49%)]",
-  sunset: "bg-gradient-to-r from-[hsl(33,100%,53%)] to-[hsl(58,100%,68%)]",
-  twilight: "bg-gradient-to-r from-[hsl(186,33%,94%)] to-[hsl(216,41%,79%)]"
+  moon:     "radial-gradient(circle, rgba(201,201,201,1) 0%, rgba(112,112,112,1) 100%)",
+  ocean:    "linear-gradient(to right, hsl(210,90%,80%), hsl(212,93%,49%))",
+  beach:    "linear-gradient(to right, hsl(40,63%,85%), hsl(22,94%,79%))",
+  forest:   "linear-gradient(to right, hsl(165,89%,31%), hsl(161,46%,49%))",
+  sunset:   "linear-gradient(to right, hsl(33,100%,53%), hsl(58,100%,68%))",
+  twilight: "linear-gradient(to right, hsl(186,33%,94%), hsl(216,41%,79%))"
 };
 
 // ----------------------------------------------------------------------------
@@ -265,77 +268,76 @@ export const BUBBLE_COLORS = {
 };
 
 // ----------------------------------------------------------------------------
-// NEW: WHATSAPP-STYLE CHAT BUBBLE COLORS
+// WHATSAPP-STYLE CHAT BUBBLE COLORS
 // Primary color system with auto-complementary colors
-// Each palette includes user bubble, AI bubble, and text colors
 // ----------------------------------------------------------------------------
 export const CHAT_BUBBLE_COLORS = {
   default: {
     name: "Default",
-    user: "#DCF8C6",           // Light green (WhatsApp classic)
-    ai: "#FFFFFF",             // White
+    user: "#DCF8C6",
+    ai: "#FFFFFF",
     userText: "#000000",
     aiText: "#000000",
-    sidebarAccent: "#DCF8C6",  // For sidebar active item
-    chatBg: "from-emerald-50/50 via-green-50/30 to-teal-50/50",  // Complementary background
+    sidebarAccent: "#DCF8C6",
+    chatBg: "from-emerald-50/50 via-green-50/30 to-teal-50/50",
     chatBgDark: "from-emerald-950/30 via-green-950/20 to-teal-950/30"
   },
   pistachio: {
     name: "Pistachio",
-    user: "#93C5A1",           // Pistachio green
-    ai: "#E8F5E9",             // Very light green
-    userText: "#1B5E20",       // Dark green
-    aiText: "#2E7D32",         // Medium green
+    user: "#93C5A1",
+    ai: "#E8F5E9",
+    userText: "#1B5E20",
+    aiText: "#2E7D32",
     sidebarAccent: "#93C5A1",
     chatBg: "from-green-50/50 via-emerald-50/30 to-lime-50/50",
     chatBgDark: "from-green-950/30 via-emerald-950/20 to-lime-950/30"
   },
   lavender: {
     name: "Lavender",
-    user: "#E1BEE7",           // Soft purple
-    ai: "#F3E5F5",             // Lighter purple
-    userText: "#4A148C",       // Dark purple
-    aiText: "#6A1B9A",         // Medium purple
+    user: "#E1BEE7",
+    ai: "#F3E5F5",
+    userText: "#4A148C",
+    aiText: "#6A1B9A",
     sidebarAccent: "#E1BEE7",
     chatBg: "from-purple-50/50 via-violet-50/30 to-fuchsia-50/50",
     chatBgDark: "from-purple-950/30 via-violet-950/20 to-fuchsia-950/30"
   },
   peach: {
     name: "Peach",
-    user: "#FFCCBC",           // Soft peach
-    ai: "#FFF3E0",             // Light peach
-    userText: "#BF360C",       // Dark orange
-    aiText: "#E64A19",         // Medium orange
+    user: "#FFCCBC",
+    ai: "#FFF3E0",
+    userText: "#BF360C",
+    aiText: "#E64A19",
     sidebarAccent: "#FFCCBC",
     chatBg: "from-orange-50/50 via-amber-50/30 to-yellow-50/50",
     chatBgDark: "from-orange-950/30 via-amber-950/20 to-yellow-950/30"
   },
   sky: {
     name: "Sky Blue",
-    user: "#BBDEFB",           // Light blue
-    ai: "#E3F2FD",             // Lighter blue
-    userText: "#0D47A1",       // Dark blue
-    aiText: "#1565C0",         // Medium blue
+    user: "#BBDEFB",
+    ai: "#E3F2FD",
+    userText: "#0D47A1",
+    aiText: "#1565C0",
     sidebarAccent: "#BBDEFB",
     chatBg: "from-blue-50/50 via-sky-50/30 to-cyan-50/50",
     chatBgDark: "from-blue-950/30 via-sky-950/20 to-cyan-950/30"
   },
   mint: {
     name: "Mint",
-    user: "#B2DFDB",           // Mint green
-    ai: "#E0F2F1",             // Light mint
-    userText: "#004D40",       // Dark teal
-    aiText: "#00695C",         // Medium teal
+    user: "#B2DFDB",
+    ai: "#E0F2F1",
+    userText: "#004D40",
+    aiText: "#00695C",
     sidebarAccent: "#B2DFDB",
     chatBg: "from-teal-50/50 via-cyan-50/30 to-emerald-50/50",
     chatBgDark: "from-teal-950/30 via-cyan-950/20 to-emerald-950/30"
   },
   rose: {
     name: "Rose",
-    user: "#F8BBD0",           // Soft pink
-    ai: "#FCE4EC",             // Light pink
-    userText: "#880E4F",       // Dark pink
-    aiText: "#C2185B",         // Medium pink
+    user: "#F8BBD0",
+    ai: "#FCE4EC",
+    userText: "#880E4F",
+    aiText: "#C2185B",
     sidebarAccent: "#F8BBD0",
     chatBg: "from-pink-50/50 via-rose-50/30 to-red-50/50",
     chatBgDark: "from-pink-950/30 via-rose-950/20 to-red-950/30"

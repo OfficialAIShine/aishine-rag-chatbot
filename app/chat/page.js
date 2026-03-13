@@ -1,32 +1,9 @@
-// page.js
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Download, Focus } from "lucide-react";
+import { X } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
-import FocusPlant from './components/FocusPlant';
 import { motion } from "framer-motion";
-import { 
-  Settings, 
-  Sun, 
-  Moon, 
-  Monitor,
-  Palette,
-  Type,
-  Send,
-  Mic,
-  MicOff,
-  Sparkles,
-  ThumbsUp,
-  ThumbsDown,
-  Copy,
-  Share2,
-  Volume2,
-  FileText,
-  Zap,
-  Check,
-  X
-} from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 
 // Components
@@ -37,6 +14,7 @@ import InputArea from "./components/InputArea";
 import SettingsModal from "./components/SettingsModal";
 import ConversationSidebar from "./components/ConversationSidebar";
 import ChatWidget from "./components/ChatWidget";
+import FocusPlant from './components/FocusPlant';
 
 // Hooks
 import { useSettings } from "./hooks/useSettings";
@@ -49,6 +27,7 @@ import { playSound } from "./utils/soundEffects";
 import { exportToPDF } from "./utils/exportHelpers";
 import { sendChatMessage, getConversation } from "./utils/api";
 import { getSessionId, getCurrentConversationId, setCurrentConversationId } from "./utils/session";
+import { getWidgetMode } from "./utils/widgetMode";
 import { formatAIResponse } from "./utils/formatText";
 import {
   FONT_SIZE_MAP,
@@ -60,7 +39,7 @@ import {
 
 
 export default function Home() {
-  // State
+  // ─── State ────────────────────────────────────────────────────────────────
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -68,7 +47,8 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [currentConversationId, setCurrentConvId] = useState(null);
-  const [isMinimized, setIsMinimized] = useState(false); // Widget minimized state
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [isWidgetMode, setIsWidgetMode] = useState(false);
 
   const [streamingContent, setStreamingContent] = useState("");
   const fullStreamBuffer = useRef("");
@@ -80,27 +60,34 @@ export default function Home() {
   const [copiedIndex, setCopiedIndex] = useState(null);
   const [previewBackground, setPreviewBackground] = useState(null);
 
-  // Refs
+  // ─── Refs ─────────────────────────────────────────────────────────────────
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Custom Hooks
+  // ─── Hooks ────────────────────────────────────────────────────────────────
   const settings = useSettings();
   const { speak, cancel, speaking, availableVoices } = useTTS(settings.ttsSettings, settings.selectedVoice);
   const speechRecognition = useSpeechRecognition();
   const { triggerCelebration } = useConfetti();
 
-  // Initialize session
+  // ─── Init ─────────────────────────────────────────────────────────────────
   useEffect(() => {
+    const widgetMode = getWidgetMode();
+    if (widgetMode) {
+      setIsWidgetMode(true);
+      setIsMinimized(true);
+      document.documentElement.style.background = 'transparent';
+      document.body.style.background = 'transparent';
+    }
+
     const sessionId = getSessionId();
     console.log('[APP] Session ID:', sessionId);
-    
+
     const today = new Date();
     const formattedDate = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
     setSessionDate(formattedDate);
     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
 
-    // Load current conversation ID from localStorage
     const convId = getCurrentConversationId();
     if (convId) {
       setCurrentConvId(convId);
@@ -108,97 +95,118 @@ export default function Home() {
     }
   }, []);
 
-  // Auto-scroll - always scroll to bottom on new messages
+  // ─── Auto-scroll ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (settings.autoScroll !== false && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, settings.autoScroll, streamingContent]);
 
-  // Format markdown-like text to HTML for display
+  // ─── formatMessage ────────────────────────────────────────────────────────
   const formatMessage = (text) => {
     if (!text || typeof text !== 'string') return '';
 
     let formatted = text;
 
-    // Code blocks (```code```) - preserve content
     formatted = formatted.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
-      return `<pre class="bg-gray-800 dark:bg-gray-900 text-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-sm font-mono"><code>${code.trim()}</code></pre>`;
+      return `<pre style="background:#1f2937;color:#f3f4f6;border-radius:8px;padding:12px;margin:8px 0;overflow-x:auto;font-size:13px;font-family:monospace;white-space:pre-wrap;word-break:break-word;"><code>${code.trim()}</code></pre>`;
     });
 
-    // Inline code (`code`)
-    formatted = formatted.replace(/`([^`]+)`/g, '<code class="bg-gray-200 dark:bg-gray-700 text-pink-600 dark:text-pink-400 px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
+    formatted = formatted.replace(/`([^`]+)`/g,
+      '<code style="background:#e5e7eb;color:#db2777;padding:2px 6px;border-radius:4px;font-size:13px;font-family:monospace;">$1</code>'
+    );
 
-    // Bold (**text** or __text__)
-    formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold">$1</strong>');
-    formatted = formatted.replace(/__([^_]+)__/g, '<strong class="font-bold">$1</strong>');
+    formatted = formatted.replace(/\*\*([^*]+)\*\*/g,
+      '<strong style="font-weight:700;">$1</strong>'
+    );
+    formatted = formatted.replace(/__([^_]+)__/g,
+      '<strong style="font-weight:700;">$1</strong>'
+    );
 
-    // Italic (*text* or _text_) - single asterisk/underscore
-    formatted = formatted.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em class="italic">$1</em>');
-    formatted = formatted.replace(/(?<!_)_([^_]+)_(?!_)/g, '<em class="italic">$1</em>');
+    formatted = formatted.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g,
+      '<em style="font-style:italic;">$1</em>'
+    );
+    formatted = formatted.replace(/(?<!_)_([^_]+)_(?!_)/g,
+      '<em style="font-style:italic;">$1</em>'
+    );
 
-    // Headers
-    formatted = formatted.replace(/^### (.+)$/gm, '<h3 class="text-base font-bold mt-3 mb-1">$1</h3>');
-    formatted = formatted.replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-3 mb-1">$1</h2>');
-    formatted = formatted.replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-3 mb-2">$1</h1>');
+    formatted = formatted.replace(/^### (.+)$/gm,
+      '<h3 style="font-size:15px;font-weight:700;margin:12px 0 4px;line-height:1.4;">$1</h3>'
+    );
+    formatted = formatted.replace(/^## (.+)$/gm,
+      '<h2 style="font-size:17px;font-weight:700;margin:12px 0 4px;line-height:1.4;">$1</h2>'
+    );
+    formatted = formatted.replace(/^# (.+)$/gm,
+      '<h1 style="font-size:19px;font-weight:700;margin:12px 0 6px;line-height:1.4;">$1</h1>'
+    );
 
-    // Blockquotes
-    formatted = formatted.replace(/^> (.+)$/gm, '<blockquote class="border-l-4 border-purple-500 pl-3 py-1 my-2 italic text-gray-600 dark:text-gray-400">$1</blockquote>');
+    formatted = formatted.replace(/^> (.+)$/gm,
+      '<blockquote style="border-left:4px solid #a855f7;padding:4px 12px;margin:8px 0;font-style:italic;color:#6b7280;">$1</blockquote>'
+    );
 
-    // Bullet points (- item or * item at start of line)
-    formatted = formatted.replace(/^[\-\*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>');
+    formatted = formatted.replace(/^[\-\*] (.+)$/gm,
+      '<li style="margin-left:20px;list-style-type:disc;margin-bottom:3px;line-height:1.5;">$1</li>'
+    );
 
-    // Numbered lists (1. item)
-    formatted = formatted.replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>');
+    formatted = formatted.replace(/^\d+\. (.+)$/gm,
+      '<li style="margin-left:20px;list-style-type:decimal;margin-bottom:3px;line-height:1.5;">$1</li>'
+    );
 
-    // Wrap consecutive list items
-    formatted = formatted.replace(/(<li class="ml-4 list-disc">[^<]*<\/li>\n?)+/g, '<ul class="my-2 space-y-1">$&</ul>');
-    formatted = formatted.replace(/(<li class="ml-4 list-decimal">[^<]*<\/li>\n?)+/g, '<ol class="my-2 space-y-1">$&</ol>');
+    formatted = formatted.replace(/(<li style="margin-left:20px;list-style-type:disc[^"]*">[^<]*<\/li>\n?)+/g,
+      '<ul style="margin:8px 0;padding:0;">$&</ul>'
+    );
+    formatted = formatted.replace(/(<li style="margin-left:20px;list-style-type:decimal[^"]*">[^<]*<\/li>\n?)+/g,
+      '<ol style="margin:8px 0;padding:0;">$&</ol>'
+    );
 
-    // Horizontal rules
-    formatted = formatted.replace(/^(-{3,}|\*{3,})$/gm, '<hr class="my-3 border-gray-300 dark:border-gray-600" />');
+    formatted = formatted.replace(/^(-{3,}|\*{3,})$/gm,
+      '<hr style="margin:12px 0;border:none;border-top:1px solid #d1d5db;" />'
+    );
 
-    // Links [text](url)
-    formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-purple-600 dark:text-purple-400 hover:underline">$1</a>');
+    formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#9333ea;text-decoration:underline;">$1</a>'
+    );
 
-    // Paragraphs - double newlines become paragraph breaks
-    formatted = formatted.replace(/\n\n+/g, '</p><p class="mb-3">');
+    formatted = formatted.replace(/\n\n+/g,
+      '</p><p style="margin-bottom:10px;line-height:1.6;">'
+    );
 
-    // Single newlines become line breaks
     formatted = formatted.replace(/\n/g, '<br />');
 
-    // Wrap in paragraph tags
-    if (!formatted.startsWith('<h') && !formatted.startsWith('<pre') && !formatted.startsWith('<ul') && !formatted.startsWith('<ol') && !formatted.startsWith('<blockquote')) {
-      formatted = `<p class="mb-3">${formatted}</p>`;
+    if (
+      !formatted.startsWith('<h') &&
+      !formatted.startsWith('<pre') &&
+      !formatted.startsWith('<ul') &&
+      !formatted.startsWith('<ol') &&
+      !formatted.startsWith('<blockquote')
+    ) {
+      formatted = `<p style="margin-bottom:10px;line-height:1.6;">${formatted}</p>`;
     }
 
-    // Clean up empty paragraphs and fix nesting issues
-    formatted = formatted.replace(/<p class="mb-3"><\/p>/g, '');
-    formatted = formatted.replace(/<p class="mb-3">(<h[1-3])/g, '$1');
+    formatted = formatted.replace(/<p style="margin-bottom:10px;line-height:1.6;"><\/p>/g, '');
+    formatted = formatted.replace(/<p style="margin-bottom:10px;line-height:1.6;">(<h[1-3])/g, '$1');
     formatted = formatted.replace(/(<\/h[1-3]>)<\/p>/g, '$1');
-    formatted = formatted.replace(/<p class="mb-3">(<ul|<ol|<pre|<blockquote|<hr)/g, '$1');
+    formatted = formatted.replace(/<p style="margin-bottom:10px;line-height:1.6;">(<ul|<ol|<pre|<blockquote|<hr)/g, '$1');
     formatted = formatted.replace(/(<\/ul>|<\/ol>|<\/pre>|<\/blockquote>)<\/p>/g, '$1');
     formatted = formatted.replace(/<br \/><\/p>/g, '</p>');
-    formatted = formatted.replace(/<p class="mb-3"><br \/>/g, '<p class="mb-3">');
+    formatted = formatted.replace(/<p style="margin-bottom:10px;line-height:1.6;"><br \/>/g,
+      '<p style="margin-bottom:10px;line-height:1.6;">'
+    );
 
     return formatted;
   };
 
-  // Streaming effect - faster update for live streaming feel
+  // ─── Streaming ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isStreamingActive.current) return;
-
     const interval = setInterval(() => {
       setStreamingContent((prev) => {
         const target = fullStreamBuffer.current;
         if (prev.length >= target.length) return prev;
-        // Stream multiple characters at once for smoother experience
         const chunkSize = Math.min(5, target.length - prev.length);
-        const nextChunk = target.slice(prev.length, prev.length + chunkSize);
-        return prev + nextChunk;
+        return prev + target.slice(prev.length, prev.length + chunkSize);
       });
-    }, 15); // Faster interval for smoother streaming
-
+    }, 15);
     return () => clearInterval(interval);
   }, [loading]);
 
@@ -208,7 +216,6 @@ export default function Home() {
         const updated = [...prev];
         const lastIdx = updated.length - 1;
         if (updated[lastIdx]?.role === "ai" && updated[lastIdx]?.isStreaming) {
-          // Apply formatting during streaming
           updated[lastIdx].content = formatMessage(streamingContent);
         }
         return updated;
@@ -216,14 +223,14 @@ export default function Home() {
     }
   }, [streamingContent, loading]);
 
-  // Focus textarea
+  // ─── Focus textarea ───────────────────────────────────────────────────────
   useEffect(() => {
-    if (textareaRef.current && isFirstMessage) {
+    if (textareaRef.current && isFirstMessage && !isWidgetMode) {
       textareaRef.current.focus();
     }
-  }, [isFirstMessage]);
+  }, [isFirstMessage, isWidgetMode]);
 
-  // Handle speech recognition
+  // ─── Speech recognition ───────────────────────────────────────────────────
   useEffect(() => {
     if (speechRecognition.transcript) {
       setInput(prev => prev ? `${prev} ${speechRecognition.transcript}` : speechRecognition.transcript);
@@ -231,6 +238,7 @@ export default function Home() {
     }
   }, [speechRecognition.transcript]);
 
+  // ─── Helpers ──────────────────────────────────────────────────────────────
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (settings.bedtimeMode) return 'Good evening';
@@ -239,38 +247,21 @@ export default function Home() {
     return 'Good evening';
   };
 
-  const handlePreviewBackground = (bg) => {
-    setPreviewBackground(bg);
-  };
+  const handlePreviewBackground = (bg) => setPreviewBackground(bg);
 
   const handleSuggestionClick = (suggestion) => {
     if (loading) {
       toast.error('Please wait for AI to finish responding');
       return;
     }
-    
-    if (settings.animationsEnabled) {
-      triggerCelebration();
-    }
+    if (settings.animationsEnabled) triggerCelebration();
     playSound('success', settings.soundEffects);
     setInput(suggestion);
-    
     setTimeout(() => {
       if (!suggestion.trim()) return;
       setIsFirstMessage(false);
-      
-      const timestamp = new Date().toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-
-      const userMessage = {
-        role: 'human',
-        type: 'text',
-        content: suggestion,
-        timestamp
-      };
-
+      const timestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      const userMessage = { role: 'human', type: 'text', content: suggestion, timestamp };
       const newMessages = [...messages, userMessage];
       setMessages(newMessages);
       setInput('');
@@ -278,65 +269,37 @@ export default function Home() {
     }, 300);
   };
 
+  // ─── Send message ─────────────────────────────────────────────────────────
   const sendMessage = async () => {
     if (!input.trim()) return;
-    
     if (loading) {
       toast.error('Please wait for AI to finish responding');
       return;
     }
-
     playSound('send', settings.soundEffects);
+    if (isFirstMessage) setIsFirstMessage(false);
 
-    if (isFirstMessage) {
-      setIsFirstMessage(false);
-    }
-
-    const timestamp = new Date().toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-
-    const userMessage = {
-      role: 'human',
-      type: 'text',
-      content: input,
-      timestamp
-    };
-
+    const timestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const userMessage = { role: 'human', type: 'text', content: input, timestamp };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput('');
-    
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
 
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     await sendToAI(newMessages);
   };
 
   async function sendToAI(chatHistory) {
     if (loading) return;
     setLoading(true);
-
     fullStreamBuffer.current = "";
     setStreamingContent("");
     isStreamingActive.current = true;
 
-    const timestamp = new Date().toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-
+    const timestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     setMessages((prev) => [
       ...prev,
-      {
-        role: 'ai',
-        type: 'text', 
-        content: '',
-        timestamp,
-        isStreaming: true
-      }
+      { role: 'ai', type: 'text', content: '', timestamp, isStreaming: true }
     ]);
 
     try {
@@ -344,25 +307,19 @@ export default function Home() {
         .filter((msg) => msg.type !== 'error')
         .map((msg) => ({
           role: msg.role,
-          content: typeof msg.content === 'string' 
-            ? msg.content 
+          content: typeof msg.content === 'string'
+            ? msg.content
             : msg.content?.answer || JSON.stringify(msg.content),
           type: msg.type || 'text',
         }));
 
-      // Use new API helper with session + conversation headers
-      const result = await sendChatMessage(
-        formattedMessages,
-        (chunk) => {
-          fullStreamBuffer.current += chunk;
-        }
-      );
+      await sendChatMessage(formattedMessages, (chunk) => {
+        fullStreamBuffer.current += chunk;
+      });
 
       playSound('success', settings.soundEffects);
-
     } catch (error) {
       console.error('[STREAMING_ERROR]', error);
-      
       setMessages((prev) => {
         const newArr = [...prev];
         const lastIndex = newArr.length - 1;
@@ -371,25 +328,21 @@ export default function Home() {
           role: 'ai',
           type: 'error',
           content: '⚠️ Connection lost. Please try again.',
-          isStreaming: false
+          isStreaming: false,
         };
         return newArr;
       });
-      
       toast.error('Connection interrupted');
     } finally {
       setMessages((prev) => {
         const updated = [...prev];
         const lastIdx = updated.length - 1;
-        // Apply formatting to final content
         updated[lastIdx].content = formatMessage(fullStreamBuffer.current);
         updated[lastIdx].isStreaming = false;
         return updated;
       });
-
       isStreamingActive.current = false;
       setLoading(false);
-
       setTimeout(() => {
         if (settings.autoScroll && messagesEndRef.current) {
           messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -406,6 +359,7 @@ export default function Home() {
     e.target.style.overflowY = e.target.scrollHeight > maxHeight ? 'auto' : 'hidden';
   };
 
+  // ─── Chat management ──────────────────────────────────────────────────────
   const handleClearChat = () => {
     setMessages([]);
     setInput('');
@@ -421,76 +375,63 @@ export default function Home() {
   const handleSelectConversation = async (conversation) => {
     try {
       toast.loading('Loading conversation...');
-
       const fullConv = await getConversation(conversation.id);
-
-      // Convert backend format to frontend format with formatting
       const loadedMessages = fullConv.messages.map(msg => ({
         role: msg.role === 'human' ? 'human' : 'ai',
         type: msg.metadata?.response_type || 'text',
-        // Apply formatting to AI messages
         content: msg.role === 'ai' ? formatMessage(msg.content) : msg.content,
-        timestamp: new Date(msg.timestamp).toLocaleTimeString('en-US', {
-          hour: '2-digit',
-          minute: '2-digit'
-        })
+        timestamp: new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       }));
-
       setMessages(loadedMessages);
       setCurrentConvId(conversation.id);
       setIsFirstMessage(false);
-
       toast.dismiss();
       toast.success('Conversation loaded');
-
     } catch (error) {
       console.error('[LOAD_CONVERSATION]', error);
       toast.dismiss();
-      // toast.error('Failed to load conversation');
     }
   };
 
   const handleNewChat = () => {
     setMessages([]);
     setInput('');
-    setIsFirstMessage(true);
     setFeedback({});
     setCurrentConvId(null);
     setCurrentConversationId(null);
     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
     playSound('click', settings.soundEffects);
+
+    if (!isWidgetMode) {
+      setIsFirstMessage(true);
+    }
   };
 
+  // ─── Actions ──────────────────────────────────────────────────────────────
   const handleFeedback = (messageIndex, type) => {
     setFeedback(prev => {
-      const newFeedback = { ...prev };
-      if (newFeedback[messageIndex] === type) {
-        delete newFeedback[messageIndex];
+      const updated = { ...prev };
+      if (updated[messageIndex] === type) {
+        delete updated[messageIndex];
       } else {
-        newFeedback[messageIndex] = type;
+        updated[messageIndex] = type;
       }
-      return newFeedback;
+      return updated;
     });
-    
     playSound('click', settings.soundEffects);
-    
     if (type !== null) {
       toast.success('Thanks for your feedback!');
-      
-      const storedFeedback = JSON.parse(localStorage.getItem('aiFeedback') || '[]');
-      storedFeedback.push({
-        messageIndex,
-        type,
-        timestamp: new Date().toISOString(),
-        message: messages[messageIndex]?.content
-      });
-      localStorage.setItem('aiFeedback', JSON.stringify(storedFeedback));
+      try {
+        const stored = JSON.parse(localStorage.getItem('aiFeedback') || '[]');
+        stored.push({ messageIndex, type, timestamp: new Date().toISOString(), message: messages[messageIndex]?.content });
+        localStorage.setItem('aiFeedback', JSON.stringify(stored));
+      } catch { /* localStorage may be blocked in widget mode */ }
     }
   };
 
   const handleCopy = (content, index) => {
-    const textToCopy = typeof content === 'string' 
-      ? content 
+    const textToCopy = typeof content === 'string'
+      ? content
       : content.answer + '\n\nKey Points:\n' + content.keyPoints?.join('\n');
     navigator.clipboard.writeText(textToCopy.replace(/<[^>]*>/g, ''));
     setCopiedIndex(index);
@@ -503,8 +444,8 @@ export default function Home() {
     if (speaking) {
       cancel();
     } else {
-      const textToSpeak = typeof content === 'string' 
-        ? content.replace(/<[^>]*>/g, '') 
+      const textToSpeak = typeof content === 'string'
+        ? content.replace(/<[^>]*>/g, '')
         : content.answer.replace(/<[^>]*>/g, '') + '. Key Points: ' + content.keyPoints?.join('. ');
       speak(textToSpeak);
     }
@@ -512,7 +453,6 @@ export default function Home() {
 
   const handleShare = async (content) => {
     playSound('click', settings.soundEffects);
-    
     if (navigator.share) {
       try {
         await navigator.share({
@@ -521,7 +461,7 @@ export default function Home() {
         });
         toast.success('Shared successfully!');
       } catch (error) {
-        console.error('Error sharing:', error);
+        console.error('[SHARE_ERROR]', error);
       }
     } else {
       toast.error('Sharing not supported on this browser');
@@ -533,31 +473,17 @@ export default function Home() {
       toast.error('Please wait for AI to finish responding');
       return;
     }
-
     playSound('click', settings.soundEffects);
-
-    const timestamp = new Date().toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-
-    const tellMeMoreMessage = {
-      role: 'human',
-      type: 'text',
-      content: 'tell me more',
-      timestamp
-    };
-
+    const timestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const tellMeMoreMessage = { role: 'human', type: 'text', content: 'tell me more', timestamp };
     const newMessages = [...messages, tellMeMoreMessage];
     setMessages(newMessages);
-
     await sendToAI(newMessages);
   };
 
   const handleExportPDF = async () => {
     playSound('click', settings.soundEffects);
     toast.loading('Generating PDF...');
-    
     try {
       await exportToPDF(messages, sessionDate);
       toast.dismiss();
@@ -565,7 +491,7 @@ export default function Home() {
     } catch (error) {
       toast.dismiss();
       toast.error('Failed to generate PDF');
-      console.error('PDF error:', error);
+      console.error('[PDF_ERROR]', error);
     }
   };
 
@@ -577,245 +503,1104 @@ export default function Home() {
       if (started) {
         playSound('click', settings.soundEffects);
       } else {
-        toast.error('Speech recognition not supported in this browser. Try Chrome or Edge.');
+        toast.error('Speech recognition not supported. Try Chrome or Edge.');
       }
     }
   };
 
+  // ─── Computed styles ──────────────────────────────────────────────────────
+
+  // BACKGROUND_MAP values are real CSS gradient strings — must use style prop.
+  const activeBackground = previewBackground || settings.background;
+
+  const mainBgStyle = isWidgetMode
+    ? { background: 'transparent' }
+    : settings.focusMode
+      ? { background: '#111827' }
+      : {
+          background: BACKGROUND_MAP[activeBackground] || BACKGROUND_MAP.moon,
+          filter: settings.bedtimeMode ? 'brightness(0.75) saturate(0.5)' : undefined,
+        };
+
+  // FIX: was 0.72 opacity (too white). Now 0.35 so the gradient behind is clearly
+  // visible. Focus and bedtime modes bypass this entirely.
+  const messagesBgStyle = (settings.focusMode || settings.bedtimeMode)
+    ? {}
+    : settings.isDarkMode
+      ? { background: 'transparent' }
+      : { background: 'rgba(250, 248, 245, 0.35)' };
+
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <>
       <Toaster position="top-center" />
-      
-      <main className={`fixed inset-0 flex flex-col transition-all duration-500 ${
-        settings.focusMode 
-          ? 'bg-gray-900'
-          : settings.bedtimeMode
-            ? `${BACKGROUND_MAP[previewBackground || settings.background]} brightness-75 saturate-50`
-            : BACKGROUND_MAP[previewBackground || settings.background]
-      }`}>
-        
-        {/* Focus Mode Background */}
-        {settings.focusMode && (
+
+      <SettingsModal
+        show={showSettings}
+        onClose={() => {
+          setShowSettings(false);
+          setPreviewBackground(null);
+        }}
+        settings={settings}
+        availableVoices={availableVoices}
+        playSound={(type) => playSound(type, settings.soundEffects)}
+        onPreviewBackground={handlePreviewBackground}
+        isWidgetMode={isWidgetMode}
+      />
+
+      <main
+        className="fixed inset-0 flex flex-col transition-all duration-500"
+        style={mainBgStyle}
+      >
+        {/* Focus mode texture overlays */}
+        {!isWidgetMode && settings.focusMode && (
           <>
             <div className="absolute inset-0 bg-black/70 backdrop-blur-3xl -z-10" />
-            <div 
+            <div
               className="absolute inset-0 opacity-[0.015] -z-10"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-                backgroundRepeat: 'repeat'
+                backgroundRepeat: 'repeat',
               }}
             />
           </>
         )}
 
-        {/* Dark overlay for bedtime/dark mode */}
-        {settings.isDarkMode && !settings.focusMode && (
-          <div className="fixed inset-0 bg-black/80 z-0" />
+        {/* ── Full-page-only UI ── */}
+        {!isWidgetMode && (
+          <>
+            <ConversationSidebar
+              isOpen={showSidebar}
+              onClose={() => setShowSidebar(false)}
+              onSelectConversation={handleSelectConversation}
+              onNewChat={handleNewChat}
+              currentConversationId={currentConversationId}
+              focusMode={settings.focusMode}
+              bedtimeMode={settings.bedtimeMode}
+            />
+
+            {isFirstMessage && (
+              <LandingScreen
+                greeting={getGreeting()}
+                gradientIndex={gradientIndex}
+                hoveredSuggestion={hoveredSuggestion}
+                setHoveredSuggestion={setHoveredSuggestion}
+                onSuggestionClick={handleSuggestionClick}
+                animationsEnabled={settings.animationsEnabled}
+              />
+            )}
+
+            {!isFirstMessage && !isMinimized && (
+              <Header
+                onClearChat={handleClearChat}
+                onExportPDF={handleExportPDF}
+                onOpenSettings={() => {
+                  setShowSettings(true);
+                  playSound('click', settings.soundEffects);
+                }}
+                focusMode={settings.focusMode}
+                bedtimeMode={settings.bedtimeMode}
+                setFocusMode={settings.setFocusMode}
+                playSound={(type) => playSound(type, settings.soundEffects)}
+                currentBackground={activeBackground}
+                onResetToLanding={() => {
+                  setMessages([]);
+                  setInput('');
+                  setIsFirstMessage(true);
+                  setFeedback({});
+                  playSound('click', settings.soundEffects);
+                }}
+                onMinimize={() => {
+                  setIsMinimized(true);
+                  playSound('click', settings.soundEffects);
+                }}
+                onOpenSidebar={() => setShowSidebar(true)}
+              />
+            )}
+
+            {settings.focusMode && !isMinimized && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  settings.setFocusMode(false);
+                  playSound('click', settings.soundEffects);
+                  toast.success('Focus mode disabled');
+                }}
+                className="fixed top-5 right-5 bg-white/10 hover:bg-white/15 backdrop-blur-2xl border border-white/20 px-3 py-1.5 rounded-full text-white text-sm font-medium z-50 flex items-center gap-1.5 shadow-lg cursor-pointer transition-all"
+              >
+                <X className="w-4 h-4" />
+                <span>Exit</span>
+              </motion.button>
+            )}
+
+            {!isFirstMessage && !isMinimized && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+                className={`relative flex-grow overflow-y-auto px-3 md:px-4 py-3 space-y-3 scrollbar-hide ${
+                  FONT_FAMILY_MAP[settings.fontFamily] ?? ''
+                } ${FONT_SIZE_MAP[settings.fontSize] ?? ''} ${
+                  settings.fontWeight === 'bold'
+                    ? 'font-bold'
+                    : settings.fontWeight === 'italic'
+                      ? 'italic'
+                      : 'font-normal'
+                } ${settings.focusMode ? 'z-10' : ''}`}
+                style={messagesBgStyle}
+              >
+                {/* Bubble-color complementary gradient overlay */}
+                {!settings.focusMode && !settings.bedtimeMode && settings.bubbleColor && (
+                  <div
+                    className={`absolute inset-0 bg-gradient-to-br ${getChatBackground(settings.bubbleColor, settings.isDarkMode)} pointer-events-none -z-10`}
+                  />
+                )}
+
+                <div className="flex justify-center mb-2">
+                  <div className={`px-3 py-0.5 rounded-full text-[11px] font-medium ${
+                    settings.focusMode
+                      ? 'bg-white/10 text-white backdrop-blur-md'
+                      : settings.bedtimeMode
+                        ? 'bg-[#e0e5ec] shadow-[2px_2px_4px_#b8bdc4,-2px_-2px_4px_#ffffff] text-gray-700'
+                        : 'bg-black/10 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                  }`}>
+                    {sessionDate}
+                  </div>
+                </div>
+
+                <AnimatePresence>
+                  {messages.map((msg, idx) => (
+                    <ChatMessage
+                      key={idx}
+                      message={msg}
+                      index={idx}
+                      isUser={msg.role === 'human'}
+                      isStreaming={msg.isStreaming}
+                      feedback={feedback}
+                      copiedIndex={copiedIndex}
+                      speaking={speaking}
+                      onFeedback={handleFeedback}
+                      onCopy={handleCopy}
+                      onSpeak={settings.ttsEnabled ? handleSpeak : () => toast.error('TTS is disabled')}
+                      onShare={handleShare}
+                      onTellMeMore={handleTellMeMore}
+                      fontSizeMap={FONT_SIZE_MAP}
+                      fontSize={settings.fontSize}
+                      focusMode={settings.focusMode}
+                      bedtimeMode={settings.bedtimeMode}
+                      bubbleColor={settings.bubbleColor}
+                    />
+                  ))}
+                </AnimatePresence>
+
+                <div ref={messagesEndRef} />
+              </motion.div>
+            )}
+
+            {!isMinimized && (
+              <InputArea
+                input={input}
+                setInput={setInput}
+                loading={loading}
+                listening={speechRecognition.listening}
+                isFirstMessage={isFirstMessage}
+                focusMode={settings.focusMode}
+                bedtimeMode={settings.bedtimeMode}
+                textareaRef={textareaRef}
+                fontFamilyMap={FONT_FAMILY_MAP}
+                fontFamily={settings.fontFamily}
+                fontSizeMap={FONT_SIZE_MAP}
+                fontSize={settings.fontSize}
+                onSend={sendMessage}
+                onToggleListening={toggleListening}
+                onOpenSettings={() => {
+                  setShowSettings(true);
+                  playSound('click', settings.soundEffects);
+                }}
+                onTextareaChange={handleTextareaChange}
+                animationsEnabled={settings.animationsEnabled}
+              />
+            )}
+          </>
         )}
 
-        {/* Conversation Sidebar */}
-        <ConversationSidebar
-          isOpen={showSidebar}
-          onClose={() => setShowSidebar(false)}
-          onSelectConversation={handleSelectConversation}
-          onNewChat={handleNewChat}
-          currentConversationId={currentConversationId}
-          focusMode={settings.focusMode}
-          bedtimeMode={settings.bedtimeMode}
-        />
-
-        {/* Settings Modal */}
-        <SettingsModal
-          show={showSettings}
-          onClose={() => {
-            setShowSettings(false);
-            setPreviewBackground(null);
-          }}
-          settings={settings}
-          availableVoices={availableVoices}
-          playSound={(type) => playSound(type, settings.soundEffects)}
-          onPreviewBackground={handlePreviewBackground}
-        />
-
-        {/* Landing Screen */}
-        {isFirstMessage && (
-          <LandingScreen
-            greeting={getGreeting()}
-            gradientIndex={gradientIndex}
-            hoveredSuggestion={hoveredSuggestion}
-            setHoveredSuggestion={setHoveredSuggestion}
-            onSuggestionClick={handleSuggestionClick}
-            animationsEnabled={settings.animationsEnabled}
-          />
-        )}
-
-        {/* Header - includes sidebar toggle */}
-        {!isFirstMessage && !isMinimized && (
-          <Header
-            onClearChat={handleClearChat}
-            onExportPDF={handleExportPDF}
+        {/* ── ChatWidget ── */}
+        {(isMinimized || isWidgetMode) && (
+          <ChatWidget
+            isWidgetMode={isWidgetMode}
+            isMinimized={isMinimized}
+            onToggle={() => {
+              setIsMinimized(false);
+              playSound('click', settings.soundEffects);
+            }}
             onOpenSettings={() => {
               setShowSettings(true);
               playSound('click', settings.soundEffects);
             }}
-            focusMode={settings.focusMode}
+            onSelectConversation={handleSelectConversation}
+            onNewChat={handleNewChat}
+            currentConversationId={currentConversationId}
             bedtimeMode={settings.bedtimeMode}
-            setFocusMode={settings.setFocusMode}
-            playSound={(type) => playSound(type, settings.soundEffects)}
-            currentBackground={previewBackground || settings.background}
-            onResetToLanding={() => {
-              setMessages([]);
-              setInput('');
-              setIsFirstMessage(true);
-              setFeedback({});
-              playSound('click', settings.soundEffects);
-            }}
-            onMinimize={() => {
-              setIsMinimized(true);
-              playSound('click', settings.soundEffects);
-            }}
-            onOpenSidebar={() => setShowSidebar(true)}
-          />
-        )}
-
-        {/* Focus Mode Exit Button */}
-        {settings.focusMode && !isMinimized && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => {
-              settings.setFocusMode(false);
-              playSound('click', settings.soundEffects);
-              toast.success('Focus mode disabled');
-            }}
-            className="fixed top-5 right-5 bg-white/10 hover:bg-white/15 backdrop-blur-2xl border border-white/20 px-3 py-1.5 rounded-full text-white text-sm font-medium z-50 flex items-center gap-1.5 shadow-lg cursor-pointer transition-all"
-          >
-            <X className="w-4 h-4" />
-            <span>Exit</span>
-          </motion.button>
-        )}
-
-        {/* Chat Section - reduced padding for viewport fit */}
-        {!isFirstMessage && !isMinimized && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
-            className={`relative flex-grow overflow-y-auto px-3 md:px-4 py-3 space-y-3 scrollbar-hide ${
-              FONT_FAMILY_MAP[settings.fontFamily]
-            } ${FONT_SIZE_MAP[settings.fontSize]} ${
-              settings.fontWeight === 'bold' ? 'font-bold' : settings.fontWeight === 'italic' ? 'italic' : ''
-            } ${settings.focusMode ? 'z-10' : ''}`}
-          >
-            {/* Complementary bubble color background overlay */}
-            {!settings.focusMode && !settings.bedtimeMode && settings.bubbleColor && (
-              <div
-                className={`absolute inset-0 bg-gradient-to-br ${getChatBackground(settings.bubbleColor, settings.isDarkMode)} pointer-events-none -z-10`}
-              />
-            )}
-
-            {/* Session Date - compact */}
-            <div className="flex justify-center mb-2">
-              <div className={`px-3 py-0.5 rounded-full text-[11px] font-medium ${
-                settings.focusMode
-                  ? 'bg-white/10 text-white backdrop-blur-md'
-                  : settings.bedtimeMode
-                    ? 'bg-[#e0e5ec] shadow-[2px_2px_4px_#b8bdc4,-2px_-2px_4px_#ffffff] text-gray-700'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-              }`}>
-                {sessionDate}
-              </div>
-            </div>
-
-            <AnimatePresence>
-              {messages.map((msg, idx) => (
-                <ChatMessage
-                  key={idx}
-                  message={msg}
-                  index={idx}
-                  isUser={msg.role === 'human'}
-                  isStreaming={msg.isStreaming}
-                  feedback={feedback}
-                  copiedIndex={copiedIndex}
-                  speaking={speaking}
-                  onFeedback={handleFeedback}
-                  onCopy={handleCopy}
-                  onSpeak={settings.ttsEnabled ? handleSpeak : () => toast.error('TTS is disabled')}
-                  onShare={handleShare}
-                  onTellMeMore={handleTellMeMore}
-                  fontSizeMap={FONT_SIZE_MAP}
-                  fontSize={settings.fontSize}
-                  focusMode={settings.focusMode}
-                  bedtimeMode={settings.bedtimeMode}
-                  bubbleColor={settings.bubbleColor}
-                />
-              ))}
-            </AnimatePresence>
-
-            <div ref={messagesEndRef} />
-          </motion.div>
-        )}
-
-        {/* Input Area */}
-        {!isMinimized && (
-          <InputArea
+            focusMode={settings.focusMode}
+            messages={messages}
             input={input}
             setInput={setInput}
             loading={loading}
             listening={speechRecognition.listening}
-            isFirstMessage={isFirstMessage}
-            focusMode={settings.focusMode}
-            bedtimeMode={settings.bedtimeMode}
-            textareaRef={textareaRef}
-            fontFamilyMap={FONT_FAMILY_MAP}
-            fontFamily={settings.fontFamily}
-            fontSizeMap={FONT_SIZE_MAP}
-            fontSize={settings.fontSize}
             onSend={sendMessage}
             onToggleListening={toggleListening}
-            onOpenSettings={() => {
-              setShowSettings(true);
-              playSound('click', settings.soundEffects);
-            }}
-            onTextareaChange={handleTextareaChange}
-            animationsEnabled={settings.animationsEnabled}
+            onExportPDF={handleExportPDF}
+            feedback={feedback}
+            copiedIndex={copiedIndex}
+            speaking={speaking}
+            onFeedback={handleFeedback}
+            onCopy={handleCopy}
+            onSpeak={settings.ttsEnabled ? handleSpeak : () => toast.error('TTS is disabled')}
+            onShare={handleShare}
+            onTellMeMore={handleTellMeMore}
+            fontSizeMap={FONT_SIZE_MAP}
+            fontSize={settings.fontSize}
+            fontFamily={settings.fontFamily}
+            fontFamilyMap={FONT_FAMILY_MAP}
+            fontWeight={settings.fontWeight}
+            bubbleColor={settings.bubbleColor}
+            background={activeBackground}
           />
         )}
-
-        {/* Minimized Chat Widget - has its own inline sidebar */}
-        <ChatWidget
-          isMinimized={isMinimized}
-          onToggle={() => {
-            setIsMinimized(false);
-            playSound('click', settings.soundEffects);
-          }}
-          onOpenSettings={() => {
-            setShowSettings(true);
-            playSound('click', settings.soundEffects);
-          }}
-          onSelectConversation={handleSelectConversation}
-          onNewChat={() => {
-            setMessages([]);
-            setInput('');
-            setIsFirstMessage(true);
-            setFeedback({});
-          }}
-          currentConversationId={currentConversationId}
-          bedtimeMode={settings.bedtimeMode}
-          messages={messages}
-          input={input}
-          setInput={setInput}
-          loading={loading}
-          listening={speechRecognition.listening}
-          onSend={sendMessage}
-          onToggleListening={toggleListening}
-        />
       </main>
     </>
   );
 }
+
+
+
+
+
+
+
+
+
+// // page.js
+// "use client";
+
+// import { useState, useRef, useEffect } from "react";
+// import { Download, Focus } from "lucide-react";
+// import toast, { Toaster } from "react-hot-toast";
+// import FocusPlant from './components/FocusPlant';
+// import { motion } from "framer-motion";
+// import { 
+//   Settings, 
+//   Sun, 
+//   Moon, 
+//   Monitor,
+//   Palette,
+//   Type,
+//   Send,
+//   Mic,
+//   MicOff,
+//   Sparkles,
+//   ThumbsUp,
+//   ThumbsDown,
+//   Copy,
+//   Share2,
+//   Volume2,
+//   FileText,
+//   Zap,
+//   Check,
+//   X
+// } from "lucide-react";
+// import { AnimatePresence } from "framer-motion";
+
+// // Components
+// import Header from "./header_components/Header";
+// import LandingScreen from "./components/LandingScreen";
+// import ChatMessage from "./components/ChatMessage";
+// import InputArea from "./components/InputArea";
+// import SettingsModal from "./components/SettingsModal";
+// import ConversationSidebar from "./components/ConversationSidebar";
+// import ChatWidget from "./components/ChatWidget";
+
+// // Hooks
+// import { useSettings } from "./hooks/useSettings";
+// import { useTTS } from "./hooks/useTTS";
+// import { useSpeechRecognition } from "./hooks/useSpeechRecognition";
+// import { useConfetti } from "./hooks/useConfetti";
+
+// // Utils
+// import { playSound } from "./utils/soundEffects";
+// import { exportToPDF } from "./utils/exportHelpers";
+// import { sendChatMessage, getConversation } from "./utils/api";
+// import { getSessionId, getCurrentConversationId, setCurrentConversationId } from "./utils/session";
+// import { formatAIResponse } from "./utils/formatText";
+// import {
+//   FONT_SIZE_MAP,
+//   FONT_FAMILY_MAP,
+//   BACKGROUND_MAP,
+//   WELCOME_GRADIENTS,
+//   getChatBackground,
+// } from "./utils/constants";
+
+
+// export default function Home() {
+//   // State
+//   const [messages, setMessages] = useState([]);
+//   const [input, setInput] = useState('');
+//   const [loading, setLoading] = useState(false);
+//   const [isFirstMessage, setIsFirstMessage] = useState(true);
+//   const [showSettings, setShowSettings] = useState(false);
+//   const [showSidebar, setShowSidebar] = useState(false);
+//   const [currentConversationId, setCurrentConvId] = useState(null);
+//   const [isMinimized, setIsMinimized] = useState(false); // Widget minimized state
+
+//   const [streamingContent, setStreamingContent] = useState("");
+//   const fullStreamBuffer = useRef("");
+//   const isStreamingActive = useRef(false);
+//   const [sessionDate, setSessionDate] = useState('');
+//   const [gradientIndex, setGradientIndex] = useState(0);
+//   const [hoveredSuggestion, setHoveredSuggestion] = useState(null);
+//   const [feedback, setFeedback] = useState({});
+//   const [copiedIndex, setCopiedIndex] = useState(null);
+//   const [previewBackground, setPreviewBackground] = useState(null);
+
+//   // Refs
+//   const messagesEndRef = useRef(null);
+//   const textareaRef = useRef(null);
+
+//   // Custom Hooks
+//   const settings = useSettings();
+//   const { speak, cancel, speaking, availableVoices } = useTTS(settings.ttsSettings, settings.selectedVoice);
+//   const speechRecognition = useSpeechRecognition();
+//   const { triggerCelebration } = useConfetti();
+
+//   // Initialize session
+//   useEffect(() => {
+//     const sessionId = getSessionId();
+//     console.log('[APP] Session ID:', sessionId);
+    
+//     const today = new Date();
+//     const formattedDate = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+//     setSessionDate(formattedDate);
+//     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
+
+//     // Load current conversation ID from localStorage
+//     const convId = getCurrentConversationId();
+//     if (convId) {
+//       setCurrentConvId(convId);
+//       console.log('[APP] Loaded conversation ID:', convId);
+//     }
+//   }, []);
+
+//   // Auto-scroll - always scroll to bottom on new messages
+//   useEffect(() => {
+//     if (settings.autoScroll !== false && messagesEndRef.current) {
+//       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+//     }
+//   }, [messages, settings.autoScroll, streamingContent]);
+
+//   // Format markdown-like text to HTML for display
+//   const formatMessage = (text) => {
+//     if (!text || typeof text !== 'string') return '';
+
+//     let formatted = text;
+
+//     // Code blocks (```code```) - preserve content
+//     formatted = formatted.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
+//       return `<pre class="bg-gray-800 dark:bg-gray-900 text-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-sm font-mono"><code>${code.trim()}</code></pre>`;
+//     });
+
+//     // Inline code (`code`)
+//     formatted = formatted.replace(/`([^`]+)`/g, '<code class="bg-gray-200 dark:bg-gray-700 text-pink-600 dark:text-pink-400 px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
+
+//     // Bold (**text** or __text__)
+//     formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold">$1</strong>');
+//     formatted = formatted.replace(/__([^_]+)__/g, '<strong class="font-bold">$1</strong>');
+
+//     // Italic (*text* or _text_) - single asterisk/underscore
+//     formatted = formatted.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em class="italic">$1</em>');
+//     formatted = formatted.replace(/(?<!_)_([^_]+)_(?!_)/g, '<em class="italic">$1</em>');
+
+//     // Headers
+//     formatted = formatted.replace(/^### (.+)$/gm, '<h3 class="text-base font-bold mt-3 mb-1">$1</h3>');
+//     formatted = formatted.replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-3 mb-1">$1</h2>');
+//     formatted = formatted.replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-3 mb-2">$1</h1>');
+
+//     // Blockquotes
+//     formatted = formatted.replace(/^> (.+)$/gm, '<blockquote class="border-l-4 border-purple-500 pl-3 py-1 my-2 italic text-gray-600 dark:text-gray-400">$1</blockquote>');
+
+//     // Bullet points (- item or * item at start of line)
+//     formatted = formatted.replace(/^[\-\*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>');
+
+//     // Numbered lists (1. item)
+//     formatted = formatted.replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>');
+
+//     // Wrap consecutive list items
+//     formatted = formatted.replace(/(<li class="ml-4 list-disc">[^<]*<\/li>\n?)+/g, '<ul class="my-2 space-y-1">$&</ul>');
+//     formatted = formatted.replace(/(<li class="ml-4 list-decimal">[^<]*<\/li>\n?)+/g, '<ol class="my-2 space-y-1">$&</ol>');
+
+//     // Horizontal rules
+//     formatted = formatted.replace(/^(-{3,}|\*{3,})$/gm, '<hr class="my-3 border-gray-300 dark:border-gray-600" />');
+
+//     // Links [text](url)
+//     formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-purple-600 dark:text-purple-400 hover:underline">$1</a>');
+
+//     // Paragraphs - double newlines become paragraph breaks
+//     formatted = formatted.replace(/\n\n+/g, '</p><p class="mb-3">');
+
+//     // Single newlines become line breaks
+//     formatted = formatted.replace(/\n/g, '<br />');
+
+//     // Wrap in paragraph tags
+//     if (!formatted.startsWith('<h') && !formatted.startsWith('<pre') && !formatted.startsWith('<ul') && !formatted.startsWith('<ol') && !formatted.startsWith('<blockquote')) {
+//       formatted = `<p class="mb-3">${formatted}</p>`;
+//     }
+
+//     // Clean up empty paragraphs and fix nesting issues
+//     formatted = formatted.replace(/<p class="mb-3"><\/p>/g, '');
+//     formatted = formatted.replace(/<p class="mb-3">(<h[1-3])/g, '$1');
+//     formatted = formatted.replace(/(<\/h[1-3]>)<\/p>/g, '$1');
+//     formatted = formatted.replace(/<p class="mb-3">(<ul|<ol|<pre|<blockquote|<hr)/g, '$1');
+//     formatted = formatted.replace(/(<\/ul>|<\/ol>|<\/pre>|<\/blockquote>)<\/p>/g, '$1');
+//     formatted = formatted.replace(/<br \/><\/p>/g, '</p>');
+//     formatted = formatted.replace(/<p class="mb-3"><br \/>/g, '<p class="mb-3">');
+
+//     return formatted;
+//   };
+
+//   // Streaming effect - faster update for live streaming feel
+//   useEffect(() => {
+//     if (!isStreamingActive.current) return;
+
+//     const interval = setInterval(() => {
+//       setStreamingContent((prev) => {
+//         const target = fullStreamBuffer.current;
+//         if (prev.length >= target.length) return prev;
+//         // Stream multiple characters at once for smoother experience
+//         const chunkSize = Math.min(5, target.length - prev.length);
+//         const nextChunk = target.slice(prev.length, prev.length + chunkSize);
+//         return prev + nextChunk;
+//       });
+//     }, 15); // Faster interval for smoother streaming
+
+//     return () => clearInterval(interval);
+//   }, [loading]);
+
+//   useEffect(() => {
+//     if (loading && messages.length > 0) {
+//       setMessages((prev) => {
+//         const updated = [...prev];
+//         const lastIdx = updated.length - 1;
+//         if (updated[lastIdx]?.role === "ai" && updated[lastIdx]?.isStreaming) {
+//           // Apply formatting during streaming
+//           updated[lastIdx].content = formatMessage(streamingContent);
+//         }
+//         return updated;
+//       });
+//     }
+//   }, [streamingContent, loading]);
+
+//   // Focus textarea
+//   useEffect(() => {
+//     if (textareaRef.current && isFirstMessage) {
+//       textareaRef.current.focus();
+//     }
+//   }, [isFirstMessage]);
+
+//   // Handle speech recognition
+//   useEffect(() => {
+//     if (speechRecognition.transcript) {
+//       setInput(prev => prev ? `${prev} ${speechRecognition.transcript}` : speechRecognition.transcript);
+//       speechRecognition.resetTranscript();
+//     }
+//   }, [speechRecognition.transcript]);
+
+//   const getGreeting = () => {
+//     const hour = new Date().getHours();
+//     if (settings.bedtimeMode) return 'Good evening';
+//     if (hour < 12) return 'Good morning';
+//     if (hour < 18) return 'Good afternoon';
+//     return 'Good evening';
+//   };
+
+//   const handlePreviewBackground = (bg) => {
+//     setPreviewBackground(bg);
+//   };
+
+//   const handleSuggestionClick = (suggestion) => {
+//     if (loading) {
+//       toast.error('Please wait for AI to finish responding');
+//       return;
+//     }
+    
+//     if (settings.animationsEnabled) {
+//       triggerCelebration();
+//     }
+//     playSound('success', settings.soundEffects);
+//     setInput(suggestion);
+    
+//     setTimeout(() => {
+//       if (!suggestion.trim()) return;
+//       setIsFirstMessage(false);
+      
+//       const timestamp = new Date().toLocaleTimeString('en-US', {
+//         hour: '2-digit',
+//         minute: '2-digit'
+//       });
+
+//       const userMessage = {
+//         role: 'human',
+//         type: 'text',
+//         content: suggestion,
+//         timestamp
+//       };
+
+//       const newMessages = [...messages, userMessage];
+//       setMessages(newMessages);
+//       setInput('');
+//       sendToAI(newMessages);
+//     }, 300);
+//   };
+
+//   const sendMessage = async () => {
+//     if (!input.trim()) return;
+    
+//     if (loading) {
+//       toast.error('Please wait for AI to finish responding');
+//       return;
+//     }
+
+//     playSound('send', settings.soundEffects);
+
+//     if (isFirstMessage) {
+//       setIsFirstMessage(false);
+//     }
+
+//     const timestamp = new Date().toLocaleTimeString('en-US', {
+//       hour: '2-digit',
+//       minute: '2-digit'
+//     });
+
+//     const userMessage = {
+//       role: 'human',
+//       type: 'text',
+//       content: input,
+//       timestamp
+//     };
+
+//     const newMessages = [...messages, userMessage];
+//     setMessages(newMessages);
+//     setInput('');
+    
+//     if (textareaRef.current) {
+//       textareaRef.current.style.height = 'auto';
+//     }
+
+//     await sendToAI(newMessages);
+//   };
+
+//   async function sendToAI(chatHistory) {
+//     if (loading) return;
+//     setLoading(true);
+
+//     fullStreamBuffer.current = "";
+//     setStreamingContent("");
+//     isStreamingActive.current = true;
+
+//     const timestamp = new Date().toLocaleTimeString('en-US', {
+//       hour: '2-digit',
+//       minute: '2-digit'
+//     });
+
+//     setMessages((prev) => [
+//       ...prev,
+//       {
+//         role: 'ai',
+//         type: 'text', 
+//         content: '',
+//         timestamp,
+//         isStreaming: true
+//       }
+//     ]);
+
+//     try {
+//       const formattedMessages = chatHistory
+//         .filter((msg) => msg.type !== 'error')
+//         .map((msg) => ({
+//           role: msg.role,
+//           content: typeof msg.content === 'string' 
+//             ? msg.content 
+//             : msg.content?.answer || JSON.stringify(msg.content),
+//           type: msg.type || 'text',
+//         }));
+
+//       // Use new API helper with session + conversation headers
+//       const result = await sendChatMessage(
+//         formattedMessages,
+//         (chunk) => {
+//           fullStreamBuffer.current += chunk;
+//         }
+//       );
+
+//       playSound('success', settings.soundEffects);
+
+//     } catch (error) {
+//       console.error('[STREAMING_ERROR]', error);
+      
+//       setMessages((prev) => {
+//         const newArr = [...prev];
+//         const lastIndex = newArr.length - 1;
+//         newArr[lastIndex] = {
+//           ...newArr[lastIndex],
+//           role: 'ai',
+//           type: 'error',
+//           content: '⚠️ Connection lost. Please try again.',
+//           isStreaming: false
+//         };
+//         return newArr;
+//       });
+      
+//       toast.error('Connection interrupted');
+//     } finally {
+//       setMessages((prev) => {
+//         const updated = [...prev];
+//         const lastIdx = updated.length - 1;
+//         // Apply formatting to final content
+//         updated[lastIdx].content = formatMessage(fullStreamBuffer.current);
+//         updated[lastIdx].isStreaming = false;
+//         return updated;
+//       });
+
+//       isStreamingActive.current = false;
+//       setLoading(false);
+
+//       setTimeout(() => {
+//         if (settings.autoScroll && messagesEndRef.current) {
+//           messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+//         }
+//       }, 100);
+//     }
+//   }
+
+//   const handleTextareaChange = (e) => {
+//     setInput(e.target.value);
+//     const maxHeight = 200;
+//     e.target.style.height = 'auto';
+//     e.target.style.height = `${Math.min(e.target.scrollHeight, maxHeight)}px`;
+//     e.target.style.overflowY = e.target.scrollHeight > maxHeight ? 'auto' : 'hidden';
+//   };
+
+//   const handleClearChat = () => {
+//     setMessages([]);
+//     setInput('');
+//     setIsFirstMessage(true);
+//     setFeedback({});
+//     setCurrentConvId(null);
+//     setCurrentConversationId(null);
+//     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
+//     playSound('click', settings.soundEffects);
+//     toast.success('Chat cleared!');
+//   };
+
+//   const handleSelectConversation = async (conversation) => {
+//     try {
+//       toast.loading('Loading conversation...');
+
+//       const fullConv = await getConversation(conversation.id);
+
+//       // Convert backend format to frontend format with formatting
+//       const loadedMessages = fullConv.messages.map(msg => ({
+//         role: msg.role === 'human' ? 'human' : 'ai',
+//         type: msg.metadata?.response_type || 'text',
+//         // Apply formatting to AI messages
+//         content: msg.role === 'ai' ? formatMessage(msg.content) : msg.content,
+//         timestamp: new Date(msg.timestamp).toLocaleTimeString('en-US', {
+//           hour: '2-digit',
+//           minute: '2-digit'
+//         })
+//       }));
+
+//       setMessages(loadedMessages);
+//       setCurrentConvId(conversation.id);
+//       setIsFirstMessage(false);
+
+//       toast.dismiss();
+//       toast.success('Conversation loaded');
+
+//     } catch (error) {
+//       console.error('[LOAD_CONVERSATION]', error);
+//       toast.dismiss();
+//       // toast.error('Failed to load conversation');
+//     }
+//   };
+
+//   const handleNewChat = () => {
+//     setMessages([]);
+//     setInput('');
+//     setIsFirstMessage(true);
+//     setFeedback({});
+//     setCurrentConvId(null);
+//     setCurrentConversationId(null);
+//     setGradientIndex(Math.floor(Math.random() * WELCOME_GRADIENTS.length));
+//     playSound('click', settings.soundEffects);
+//   };
+
+//   const handleFeedback = (messageIndex, type) => {
+//     setFeedback(prev => {
+//       const newFeedback = { ...prev };
+//       if (newFeedback[messageIndex] === type) {
+//         delete newFeedback[messageIndex];
+//       } else {
+//         newFeedback[messageIndex] = type;
+//       }
+//       return newFeedback;
+//     });
+    
+//     playSound('click', settings.soundEffects);
+    
+//     if (type !== null) {
+//       toast.success('Thanks for your feedback!');
+      
+//       const storedFeedback = JSON.parse(localStorage.getItem('aiFeedback') || '[]');
+//       storedFeedback.push({
+//         messageIndex,
+//         type,
+//         timestamp: new Date().toISOString(),
+//         message: messages[messageIndex]?.content
+//       });
+//       localStorage.setItem('aiFeedback', JSON.stringify(storedFeedback));
+//     }
+//   };
+
+//   const handleCopy = (content, index) => {
+//     const textToCopy = typeof content === 'string' 
+//       ? content 
+//       : content.answer + '\n\nKey Points:\n' + content.keyPoints?.join('\n');
+//     navigator.clipboard.writeText(textToCopy.replace(/<[^>]*>/g, ''));
+//     setCopiedIndex(index);
+//     playSound('success', settings.soundEffects);
+//     toast.success('Copied to clipboard!');
+//     setTimeout(() => setCopiedIndex(null), 2000);
+//   };
+
+//   const handleSpeak = (content) => {
+//     if (speaking) {
+//       cancel();
+//     } else {
+//       const textToSpeak = typeof content === 'string' 
+//         ? content.replace(/<[^>]*>/g, '') 
+//         : content.answer.replace(/<[^>]*>/g, '') + '. Key Points: ' + content.keyPoints?.join('. ');
+//       speak(textToSpeak);
+//     }
+//   };
+
+//   const handleShare = async (content) => {
+//     playSound('click', settings.soundEffects);
+    
+//     if (navigator.share) {
+//       try {
+//         await navigator.share({
+//           title: 'AI Shine Response',
+//           text: typeof content === 'string' ? content.replace(/<[^>]*>/g, '') : content.answer.replace(/<[^>]*>/g, ''),
+//         });
+//         toast.success('Shared successfully!');
+//       } catch (error) {
+//         console.error('Error sharing:', error);
+//       }
+//     } else {
+//       toast.error('Sharing not supported on this browser');
+//     }
+//   };
+
+//   const handleTellMeMore = async (messageIndex) => {
+//     if (loading) {
+//       toast.error('Please wait for AI to finish responding');
+//       return;
+//     }
+
+//     playSound('click', settings.soundEffects);
+
+//     const timestamp = new Date().toLocaleTimeString('en-US', {
+//       hour: '2-digit',
+//       minute: '2-digit'
+//     });
+
+//     const tellMeMoreMessage = {
+//       role: 'human',
+//       type: 'text',
+//       content: 'tell me more',
+//       timestamp
+//     };
+
+//     const newMessages = [...messages, tellMeMoreMessage];
+//     setMessages(newMessages);
+
+//     await sendToAI(newMessages);
+//   };
+
+//   const handleExportPDF = async () => {
+//     playSound('click', settings.soundEffects);
+//     toast.loading('Generating PDF...');
+    
+//     try {
+//       await exportToPDF(messages, sessionDate);
+//       toast.dismiss();
+//       toast.success('PDF downloaded!');
+//     } catch (error) {
+//       toast.dismiss();
+//       toast.error('Failed to generate PDF');
+//       console.error('PDF error:', error);
+//     }
+//   };
+
+//   const toggleListening = () => {
+//     if (speechRecognition.listening) {
+//       speechRecognition.stopListening();
+//     } else {
+//       const started = speechRecognition.startListening();
+//       if (started) {
+//         playSound('click', settings.soundEffects);
+//       } else {
+//         toast.error('Speech recognition not supported in this browser. Try Chrome or Edge.');
+//       }
+//     }
+//   };
+
+//   return (
+//     <>
+//       <Toaster position="top-center" />
+      
+//       <main className={`fixed inset-0 flex flex-col transition-all duration-500 ${
+//         settings.focusMode 
+//           ? 'bg-gray-900'
+//           : settings.bedtimeMode
+//             ? `${BACKGROUND_MAP[previewBackground || settings.background]} brightness-75 saturate-50`
+//             : BACKGROUND_MAP[previewBackground || settings.background]
+//       }`}>
+        
+//         {/* Focus Mode Background */}
+//         {settings.focusMode && (
+//           <>
+//             <div className="absolute inset-0 bg-black/70 backdrop-blur-3xl -z-10" />
+//             <div 
+//               className="absolute inset-0 opacity-[0.015] -z-10"
+//               style={{
+//                 backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+//                 backgroundRepeat: 'repeat'
+//               }}
+//             />
+//           </>
+//         )}
+
+//         {/* Dark overlay for bedtime/dark mode */}
+//         {settings.isDarkMode && !settings.focusMode && (
+//           <div className="fixed inset-0 bg-black/80 z-0" />
+//         )}
+
+//         {/* Conversation Sidebar */}
+//         <ConversationSidebar
+//           isOpen={showSidebar}
+//           onClose={() => setShowSidebar(false)}
+//           onSelectConversation={handleSelectConversation}
+//           onNewChat={handleNewChat}
+//           currentConversationId={currentConversationId}
+//           focusMode={settings.focusMode}
+//           bedtimeMode={settings.bedtimeMode}
+//         />
+
+//         {/* Settings Modal */}
+//         <SettingsModal
+//           show={showSettings}
+//           onClose={() => {
+//             setShowSettings(false);
+//             setPreviewBackground(null);
+//           }}
+//           settings={settings}
+//           availableVoices={availableVoices}
+//           playSound={(type) => playSound(type, settings.soundEffects)}
+//           onPreviewBackground={handlePreviewBackground}
+//         />
+
+//         {/* Landing Screen */}
+//         {isFirstMessage && (
+//           <LandingScreen
+//             greeting={getGreeting()}
+//             gradientIndex={gradientIndex}
+//             hoveredSuggestion={hoveredSuggestion}
+//             setHoveredSuggestion={setHoveredSuggestion}
+//             onSuggestionClick={handleSuggestionClick}
+//             animationsEnabled={settings.animationsEnabled}
+//           />
+//         )}
+
+//         {/* Header - includes sidebar toggle */}
+//         {!isFirstMessage && !isMinimized && (
+//           <Header
+//             onClearChat={handleClearChat}
+//             onExportPDF={handleExportPDF}
+//             onOpenSettings={() => {
+//               setShowSettings(true);
+//               playSound('click', settings.soundEffects);
+//             }}
+//             focusMode={settings.focusMode}
+//             bedtimeMode={settings.bedtimeMode}
+//             setFocusMode={settings.setFocusMode}
+//             playSound={(type) => playSound(type, settings.soundEffects)}
+//             currentBackground={previewBackground || settings.background}
+//             onResetToLanding={() => {
+//               setMessages([]);
+//               setInput('');
+//               setIsFirstMessage(true);
+//               setFeedback({});
+//               playSound('click', settings.soundEffects);
+//             }}
+//             onMinimize={() => {
+//               setIsMinimized(true);
+//               playSound('click', settings.soundEffects);
+//             }}
+//             onOpenSidebar={() => setShowSidebar(true)}
+//           />
+//         )}
+
+//         {/* Focus Mode Exit Button */}
+//         {settings.focusMode && !isMinimized && (
+//           <motion.button
+//             initial={{ opacity: 0, scale: 0.9 }}
+//             animate={{ opacity: 1, scale: 1 }}
+//             whileHover={{ scale: 1.02 }}
+//             whileTap={{ scale: 0.98 }}
+//             onClick={() => {
+//               settings.setFocusMode(false);
+//               playSound('click', settings.soundEffects);
+//               toast.success('Focus mode disabled');
+//             }}
+//             className="fixed top-5 right-5 bg-white/10 hover:bg-white/15 backdrop-blur-2xl border border-white/20 px-3 py-1.5 rounded-full text-white text-sm font-medium z-50 flex items-center gap-1.5 shadow-lg cursor-pointer transition-all"
+//           >
+//             <X className="w-4 h-4" />
+//             <span>Exit</span>
+//           </motion.button>
+//         )}
+
+//         {/* Chat Section - reduced padding for viewport fit */}
+//         {!isFirstMessage && !isMinimized && (
+//           <motion.div
+//             initial={{ opacity: 0, scale: 0.98 }}
+//             animate={{ opacity: 1, scale: 1 }}
+//             transition={{ duration: 0.3, ease: "easeOut" }}
+//             className={`relative flex-grow overflow-y-auto px-3 md:px-4 py-3 space-y-3 scrollbar-hide ${
+//               FONT_FAMILY_MAP[settings.fontFamily]
+//             } ${FONT_SIZE_MAP[settings.fontSize]} ${
+//               settings.fontWeight === 'bold' ? 'font-bold' : settings.fontWeight === 'italic' ? 'italic' : ''
+//             } ${settings.focusMode ? 'z-10' : ''}`}
+//           >
+//             {/* Complementary bubble color background overlay */}
+//             {!settings.focusMode && !settings.bedtimeMode && settings.bubbleColor && (
+//               <div
+//                 className={`absolute inset-0 bg-gradient-to-br ${getChatBackground(settings.bubbleColor, settings.isDarkMode)} pointer-events-none -z-10`}
+//               />
+//             )}
+
+//             {/* Session Date - compact */}
+//             <div className="flex justify-center mb-2">
+//               <div className={`px-3 py-0.5 rounded-full text-[11px] font-medium ${
+//                 settings.focusMode
+//                   ? 'bg-white/10 text-white backdrop-blur-md'
+//                   : settings.bedtimeMode
+//                     ? 'bg-[#e0e5ec] shadow-[2px_2px_4px_#b8bdc4,-2px_-2px_4px_#ffffff] text-gray-700'
+//                     : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+//               }`}>
+//                 {sessionDate}
+//               </div>
+//             </div>
+
+//             <AnimatePresence>
+//               {messages.map((msg, idx) => (
+//                 <ChatMessage
+//                   key={idx}
+//                   message={msg}
+//                   index={idx}
+//                   isUser={msg.role === 'human'}
+//                   isStreaming={msg.isStreaming}
+//                   feedback={feedback}
+//                   copiedIndex={copiedIndex}
+//                   speaking={speaking}
+//                   onFeedback={handleFeedback}
+//                   onCopy={handleCopy}
+//                   onSpeak={settings.ttsEnabled ? handleSpeak : () => toast.error('TTS is disabled')}
+//                   onShare={handleShare}
+//                   onTellMeMore={handleTellMeMore}
+//                   fontSizeMap={FONT_SIZE_MAP}
+//                   fontSize={settings.fontSize}
+//                   focusMode={settings.focusMode}
+//                   bedtimeMode={settings.bedtimeMode}
+//                   bubbleColor={settings.bubbleColor}
+//                 />
+//               ))}
+//             </AnimatePresence>
+
+//             <div ref={messagesEndRef} />
+//           </motion.div>
+//         )}
+
+//         {/* Input Area */}
+//         {!isMinimized && (
+//           <InputArea
+//             input={input}
+//             setInput={setInput}
+//             loading={loading}
+//             listening={speechRecognition.listening}
+//             isFirstMessage={isFirstMessage}
+//             focusMode={settings.focusMode}
+//             bedtimeMode={settings.bedtimeMode}
+//             textareaRef={textareaRef}
+//             fontFamilyMap={FONT_FAMILY_MAP}
+//             fontFamily={settings.fontFamily}
+//             fontSizeMap={FONT_SIZE_MAP}
+//             fontSize={settings.fontSize}
+//             onSend={sendMessage}
+//             onToggleListening={toggleListening}
+//             onOpenSettings={() => {
+//               setShowSettings(true);
+//               playSound('click', settings.soundEffects);
+//             }}
+//             onTextareaChange={handleTextareaChange}
+//             animationsEnabled={settings.animationsEnabled}
+//           />
+//         )}
+
+//         {/* Minimized Chat Widget - has its own inline sidebar */}
+//         <ChatWidget
+//           isMinimized={isMinimized}
+//           onToggle={() => {
+//             setIsMinimized(false);
+//             playSound('click', settings.soundEffects);
+//           }}
+//           onOpenSettings={() => {
+//             setShowSettings(true);
+//             playSound('click', settings.soundEffects);
+//           }}
+//           onSelectConversation={handleSelectConversation}
+//           onNewChat={() => {
+//             setMessages([]);
+//             setInput('');
+//             setIsFirstMessage(true);
+//             setFeedback({});
+//           }}
+//           currentConversationId={currentConversationId}
+//           bedtimeMode={settings.bedtimeMode}
+//           messages={messages}
+//           input={input}
+//           setInput={setInput}
+//           loading={loading}
+//           listening={speechRecognition.listening}
+//           onSend={sendMessage}
+//           onToggleListening={toggleListening}
+//         />
+//       </main>
+//     </>
+//   );
+// }
 
 
 

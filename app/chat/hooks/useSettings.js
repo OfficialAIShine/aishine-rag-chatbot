@@ -20,10 +20,10 @@ export const useSettings = () => {
   const [selectedVoice, setSelectedVoice] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [bubbleColor, setBubbleColor] = useState(DEFAULT_BUBBLE_COLOR); // Chat bubble color theme
-  const [autoScroll, setAutoScroll] = useState(true); // Auto-scroll on new messages
+  const [bubbleColor, setBubbleColor] = useState(DEFAULT_BUBBLE_COLOR);
+  const [autoScroll, setAutoScroll] = useState(true);
 
-  // Load settings on mount
+  // ── Load settings on mount ──────────────────────────────────────────────────
   useEffect(() => {
     const savedSettings = localStorage.getItem('aiShineSettings');
     if (savedSettings) {
@@ -32,7 +32,7 @@ export const useSettings = () => {
         setTheme(settings.theme || 'system');
         setFontSize(settings.fontSize || 'M');
         setFontFamily(settings.fontFamily || 'standard');
-        setBackground(settings.background || 'moon'); // ✅ ENSURE DOODLES DEFAULT
+        setBackground(settings.background || 'moon');
         setFontWeight(settings.fontWeight || 'regular');
         setSoundEffects(settings.soundEffects !== undefined ? settings.soundEffects : true);
         setBedtimeMode(settings.bedtimeMode || false);
@@ -42,43 +42,37 @@ export const useSettings = () => {
         setBubbleColor(settings.bubbleColor || DEFAULT_BUBBLE_COLOR);
         setAutoScroll(settings.autoScroll !== undefined ? settings.autoScroll : true);
       } catch (error) {
-        console.error('Error loading settings:', error);
+        console.error('[SETTINGS] Error loading settings:', error);
       }
     }
-    
-    setIsLoaded(true); // ✅ Mark as loaded
 
-    // Auto-enable bedtime mode
+    setIsLoaded(true);
+
+    // Auto-enable bedtime mode at night
     const hour = new Date().getHours();
     if (hour >= 22 || hour < 6) {
       setBedtimeMode(true);
     }
   }, []);
 
-  // Apply theme
+  // ── Apply theme (dark/light) ────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    
+
     const root = document.documentElement;
     const applyTheme = () => {
-      let shouldBeDark = theme === 'dark' || 
+      let shouldBeDark = theme === 'dark' ||
         (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      
-      // Bedtime mode overrides - apply warm filter
+
       if (bedtimeMode) {
         shouldBeDark = true;
         root.style.filter = 'sepia(20%) brightness(0.9)';
       } else {
         root.style.filter = '';
       }
-      
+
       setIsDarkMode(shouldBeDark);
-      
-      if (shouldBeDark) {
-        root.classList.add('dark');
-      } else {
-        root.classList.remove('dark');
-      }
+      root.classList.toggle('dark', shouldBeDark);
     };
 
     applyTheme();
@@ -90,9 +84,41 @@ export const useSettings = () => {
     }
   }, [theme, bedtimeMode]);
 
-  // Save settings on change
+  // ── Apply font family to document root ─────────────────────────────────────
+  // FIX: fontFamily was stored in state but never written to the DOM.
+  // Applying to :root means all text in the app inherits it automatically.
   useEffect(() => {
-    if (!isLoaded) return; // Don't save until initial load complete
+    if (typeof window === 'undefined') return;
+
+    const fontMap = {
+      standard: "'Inter', system-ui, sans-serif",
+      lexend:   "'Lexend', sans-serif",
+      times:    "'Times New Roman', Times, serif"
+    };
+
+    document.documentElement.style.fontFamily = fontMap[fontFamily] || fontMap.standard;
+  }, [fontFamily]);
+
+  // ── Apply font weight + style to document root ──────────────────────────────
+  // FIX: fontWeight was stored in state but never written to the DOM.
+  // Italic is a font-style, not a font-weight — handled separately.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const weightMap = {
+      regular: '400',
+      bold:    '700',
+      italic:  '400'  // italic is a style, not a weight
+    };
+
+    document.documentElement.style.fontWeight = weightMap[fontWeight] || '400';
+    document.documentElement.style.fontStyle  = fontWeight === 'italic' ? 'italic' : 'normal';
+  }, [fontWeight]);
+
+  // ── Save settings on change ─────────────────────────────────────────────────
+  // Guard: don't persist until initial load is complete (avoids overwriting saved state with defaults)
+  useEffect(() => {
+    if (!isLoaded) return;
 
     const settings = {
       theme,
@@ -110,7 +136,11 @@ export const useSettings = () => {
       autoScroll
     };
     localStorage.setItem('aiShineSettings', JSON.stringify(settings));
-  }, [theme, fontSize, fontFamily, background, fontWeight, soundEffects, bedtimeMode, animationsEnabled, ttsEnabled, ttsSettings, selectedVoice, isLoaded, bubbleColor, autoScroll]);
+  }, [
+    theme, fontSize, fontFamily, background, fontWeight,
+    soundEffects, bedtimeMode, animationsEnabled, ttsEnabled,
+    ttsSettings, selectedVoice, isLoaded, bubbleColor, autoScroll
+  ]);
 
   return {
     theme, setTheme,
