@@ -1,24 +1,18 @@
 "use client";
 import { motion } from "framer-motion";
-import { Sparkles, Download, Settings, Focus, Minimize2, Menu } from "lucide-react";
-import { BACKGROUND_MAP } from "../utils/constants";
+import { Sparkles, Download, Settings, Minimize2, Menu } from "lucide-react";
 
 export default function Header({
   onClearChat,
   onExportPDF,
   onOpenSettings,
   bedtimeMode,
-  focusMode,
-  setFocusMode,
   playSound,
   currentBackground,
   onResetToLanding,
   onMinimize,
-  onOpenSidebar
+  onOpenSidebar,
 }) {
-  // Don't render in focus mode
-  if (focusMode) return null;
-
   const getHeaderGradient = () => {
     if (bedtimeMode) {
       return "bg-[#e0e5ec] shadow-[0_4px_6px_#b8bdc4]";
@@ -26,7 +20,7 @@ export default function Header({
 
     const isDark = typeof window !== 'undefined' && document.documentElement.classList.contains('dark');
 
-    switch(currentBackground) {
+    switch (currentBackground) {
       case 'ocean':
         return isDark
           ? "bg-gradient-to-r from-[hsl(210,50%,30%)] to-[hsl(212,60%,25%)] backdrop-blur-xl border-b border-white/10"
@@ -54,7 +48,6 @@ export default function Header({
     }
   };
 
-  // Match input bar button styling
   const buttonStyle = bedtimeMode
     ? "bg-[#e0e5ec] shadow-[3px_3px_6px_#b8bdc4,-3px_-3px_6px_#ffffff] text-[#1a0f08] hover:shadow-[inset_2px_2px_4px_#b8bdc4,inset_-2px_-2px_4px_#ffffff]"
     : "bg-white/60 dark:bg-gray-700/60 hover:bg-white/80 dark:hover:bg-gray-600/60 backdrop-blur-md border border-white/30 dark:border-gray-600/30 text-gray-700 dark:text-gray-200";
@@ -64,9 +57,9 @@ export default function Header({
   return (
     <header className={`relative z-30 ${getHeaderGradient()} shadow-lg`}>
       <div className="flex items-center justify-between px-3 md:px-4 py-2 gap-2">
+
         {/* Left: Sidebar Toggle + Logo */}
         <div className="flex items-center gap-2">
-          {/* Sidebar Toggle */}
           {onOpenSidebar && (
             <motion.button
               whileHover={{ scale: 1.05 }}
@@ -82,7 +75,6 @@ export default function Header({
             </motion.button>
           )}
 
-          {/* Logo */}
           <motion.button
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -124,20 +116,6 @@ export default function Header({
             title="Settings"
           >
             <Settings className="w-4 h-4" />
-          </motion.button>
-
-          {/* Focus Mode */}
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => {
-              setFocusMode(true);
-              playSound('click');
-            }}
-            className={`p-2 rounded-lg transition-all cursor-pointer ${buttonStyle}`}
-            title="Focus Mode"
-          >
-            <Focus className="w-4 h-4" />
           </motion.button>
 
           {/* Minimize to Widget */}

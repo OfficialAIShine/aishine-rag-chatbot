@@ -15,7 +15,7 @@ import toast from 'react-hot-toast';
 const stripHtml = (html) => {
   if (!html || typeof html !== 'string') return '';
   return html
-    .replace(/<[^>]*>/g, '')   // Remove all HTML tags
+    .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
@@ -31,7 +31,6 @@ export default function ConversationSidebar({
   onSelectConversation,
   onNewChat,
   currentConversationId,
-  focusMode,
   bedtimeMode,
 }) {
   const [conversations, setConversations] = useState([]);
@@ -88,7 +87,6 @@ export default function ConversationSidebar({
     onClose();
   };
 
-  // Search by title or stripped preview text
   const filteredConversations = conversations.filter(conv =>
     conv.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     stripHtml(conv.last_message || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -122,47 +120,36 @@ export default function ConversationSidebar({
   const groups = groupConversations();
 
   // ── Styles ─────────────────────────────────────────────────────────────────
-  const sidebarStyle = focusMode
-    ? 'bg-gray-900/95 backdrop-blur-xl border-r border-white/10'
-    : bedtimeMode
-      ? 'bg-[#e0e5ec]'
-      : 'bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl';
+  // focusMode removed. Dark mode handled by Tailwind dark: classes.
+  const sidebarStyle = bedtimeMode
+    ? 'bg-[#e0e5ec]'
+    : 'bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl';
 
-  const itemStyle = focusMode
-    ? 'hover:bg-white/10 text-white'
-    : bedtimeMode
-      ? 'hover:bg-[#d5dae1] text-gray-800'
-      : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200';
+  const itemStyle = bedtimeMode
+    ? 'hover:bg-[#d5dae1] text-gray-800'
+    : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200';
 
-  const activeItemStyle = focusMode
-    ? 'bg-white/15 border-l-2 border-cyan-400'
-    : bedtimeMode
-      ? 'bg-[#d5dae1] shadow-[inset_2px_2px_4px_#b8bdc4,inset_-2px_-2px_4px_#ffffff] border-l-2 border-[#8b5a3c]'
-      : 'bg-purple-50 dark:bg-purple-900/20 border-l-2 border-purple-500';
+  const activeItemStyle = bedtimeMode
+    ? 'bg-[#d5dae1] shadow-[inset_2px_2px_4px_#b8bdc4,inset_-2px_-2px_4px_#ffffff] border-l-2 border-[#8b5a3c]'
+    : 'bg-purple-50 dark:bg-purple-900/20 border-l-2 border-purple-500';
 
-  const textMuted = focusMode
-    ? 'text-gray-400'
-    : bedtimeMode
-      ? 'text-[#666]'
-      : 'text-gray-500 dark:text-gray-400';
+  const textMuted = bedtimeMode
+    ? 'text-[#666]'
+    : 'text-gray-500 dark:text-gray-400';
 
-  const inputStyle = focusMode
-    ? 'bg-white/10 border-white/20 text-white placeholder:text-gray-400'
-    : bedtimeMode
-      ? 'bg-[#d5dae1] shadow-[inset_2px_2px_4px_#b8bdc4,inset_-2px_-2px_4px_#ffffff] text-[#1a0f08] placeholder:text-gray-500'
-      : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-500';
+  const inputStyle = bedtimeMode
+    ? 'bg-[#d5dae1] shadow-[inset_2px_2px_4px_#b8bdc4,inset_-2px_-2px_4px_#ffffff] text-[#1a0f08] placeholder:text-gray-500'
+    : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-500';
 
-  const borderStyle = focusMode
-    ? 'border-white/10'
-    : bedtimeMode
-      ? 'border-[#c8ced6]'
-      : 'border-gray-200 dark:border-gray-700';
+  const borderStyle = bedtimeMode
+    ? 'border-[#c8ced6]'
+    : 'border-gray-200 dark:border-gray-700';
 
-  const headingStyle = focusMode
-    ? 'text-white'
-    : bedtimeMode
-      ? 'text-[#1a0f08]'
-      : 'text-gray-800 dark:text-white';
+  const headingStyle = bedtimeMode
+    ? 'text-[#1a0f08]'
+    : 'text-gray-800 dark:text-white';
+
+  const activeIconColor = bedtimeMode ? 'text-[#8b5a3c]' : 'text-purple-500';
 
   const renderGroup = (title, items) => {
     if (items.length === 0) return null;
@@ -187,9 +174,7 @@ export default function ConversationSidebar({
               <div className="px-3 py-2.5">
                 <div className="flex items-start gap-2">
                   <MessageSquare className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
-                    conv.id === currentConversationId
-                      ? focusMode ? 'text-cyan-400' : bedtimeMode ? 'text-[#8b5a3c]' : 'text-purple-500'
-                      : textMuted
+                    conv.id === currentConversationId ? activeIconColor : textMuted
                   }`} />
                   <div className="flex-1 min-w-0">
                     <h4 className="text-sm font-medium truncate pr-6">
@@ -214,11 +199,7 @@ export default function ConversationSidebar({
                   >
                     <button
                       onClick={(e) => handleDelete(conv.id, e)}
-                      className={`p-1.5 rounded-md transition-colors ${
-                        focusMode
-                          ? 'hover:bg-red-500/20 text-red-400'
-                          : 'hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500'
-                      }`}
+                      className="p-1.5 rounded-md transition-colors hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500"
                       title="Delete"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -237,6 +218,7 @@ export default function ConversationSidebar({
     <AnimatePresence>
       {isOpen && (
         <>
+          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -245,6 +227,7 @@ export default function ConversationSidebar({
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
           />
 
+          {/* Drawer */}
           <motion.div
             initial={{ x: -300, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
@@ -268,11 +251,9 @@ export default function ConversationSidebar({
               <button
                 onClick={handleNewChat}
                 className={`w-full py-2.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all ${
-                  focusMode
-                    ? 'bg-white/10 hover:bg-white/15 text-white border border-white/20'
-                    : bedtimeMode
-                      ? 'bg-[#e0e5ec] shadow-[3px_3px_6px_#b8bdc4,-3px_-3px_6px_#ffffff] hover:shadow-[inset_2px_2px_4px_#b8bdc4,inset_-2px_-2px_4px_#ffffff] text-[#1a0f08]'
-                      : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white shadow-md hover:shadow-lg'
+                  bedtimeMode
+                    ? 'bg-[#e0e5ec] shadow-[3px_3px_6px_#b8bdc4,-3px_-3px_6px_#ffffff] hover:shadow-[inset_2px_2px_4px_#b8bdc4,inset_-2px_-2px_4px_#ffffff] text-[#1a0f08]'
+                    : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white shadow-md hover:shadow-lg'
                 }`}
               >
                 <Plus className="w-4 h-4" />
@@ -328,8 +309,6 @@ export default function ConversationSidebar({
     </AnimatePresence>
   );
 }
-
-
 
 
 

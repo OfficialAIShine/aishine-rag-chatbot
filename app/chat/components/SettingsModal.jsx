@@ -1,1228 +1,555 @@
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Settings, 
-  Sun, 
-  Moon, 
-  Monitor, 
-  Palette, 
-  Type, 
-  Volume2, 
-  Zap, 
-  Focus,
-  HelpCircle,
-  Film,
-  ChevronLeft,
-  ChevronRight
-} from 'lucide-react';
+// SettingsModal.jsx
 import { useState, useRef, useEffect } from 'react';
-import { BACKGROUND_MAP, CHAT_BUBBLE_COLORS } from '../utils/constants';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  X, Moon, Sun, Monitor, Volume2, VolumeX, Palette, Type,
+  ChevronLeft, ChevronRight, Bell, Accessibility, Mic, Info,
+  Check, Eye
+} from 'lucide-react';
+import { BACKGROUND_MAP, FONT_SIZE_MAP, CHAT_BUBBLE_COLORS, DEFAULT_BUBBLE_COLOR } from '../utils/constants';
 
-const SETTINGS_CATEGORIES = [
+const CATEGORIES = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
-  { id: 'accessibility', label: 'Accessibility', icon: Type },
-  { id: 'audio', label: 'Audio & Voice', icon: Volume2 },
-  { id: 'modes', label: 'Modes', icon: Focus }
+  { id: 'typography', label: 'Typography', icon: Type },
+  { id: 'sound',      label: 'Sound & TTS', icon: Volume2 },
+  { id: 'voice',      label: 'Voice',       icon: Mic },
+  { id: 'accessibility', label: 'Accessibility', icon: Accessibility },
+  { id: 'about',      label: 'About',       icon: Info },
 ];
 
-const TOOLTIPS = {
-  theme: "Choose between light, dark, or system-based theme",
-  fontSize: "Adjust text size for better readability",
-  fontFamily: "Select font family (Lexend is dyslexia-friendly)",
-  background: "Choose background style for the chat interface. Hover to preview, click to apply.",
-  fontWeight: "Change text appearance (regular, bold, or italic)",
-  soundEffects: "Enable or disable click and notification sounds",
-  bedtimeMode: "Reduces blue light with warm colors for nighttime use",
-  ttsVoice: "Select the voice for text-to-speech",
-  speechRate: "Adjust how fast the AI speaks",
-  speechPitch: "Change the pitch (tone) of the AI voice",
-  speechVolume: "Control the volume of text-to-speech",
-  focusMode: "Minimalist interface with no distractions",
-  animations: "Enable or disable animations throughout the app",
-  ttsToggle: "Turn text-to-speech on or off completely"
-};
-
-function Tooltip({ text }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative inline-block">
-      <button
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
-        className="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors cursor-pointer"
-        type="button"
-      >
-        <HelpCircle className="w-4 h-4" />
-      </button>
-      <AnimatePresence>
-        {show && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="absolute left-6 top-0 w-48 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-50 pointer-events-none"
-          >
-            {text}
-            <div className="absolute left-0 top-2 w-2 h-2 bg-gray-900 transform -translate-x-1 rotate-45" />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function ToggleSwitch({ enabled, onToggle, color = 'bg-purple-600' }) {
-  return (
-    <button
-      onClick={onToggle}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors cursor-pointer ${
-        enabled ? color : 'bg-gray-300 dark:bg-gray-600'
-      }`}
-    >
-      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
-        enabled ? 'translate-x-6' : 'translate-x-1'
-      }`} />
-    </button>
-  );
-}
-
-function SectionLabel({ label, tooltip, labelColor }) {
-  return (
-    <div className="flex items-center mb-3">
-      <label className={`text-sm font-semibold ${labelColor}`}>{label}</label>
-      {tooltip && <Tooltip text={tooltip} />}
-    </div>
-  );
-}
-
-export default function SettingsModal({ 
-  show, 
-  onClose, 
-  settings, 
-  availableVoices, 
+export default function SettingsModal({
+  show,
+  onClose,
+  settings,
+  availableVoices = [],
   playSound,
   onPreviewBackground,
-  isWidgetMode = false
+  isWidgetMode = false,
 }) {
   const [activeCategory, setActiveCategory] = useState('appearance');
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const tabScrollRef = useRef(null);
 
-  const checkTabScroll = () => {
+  // ── Tab scroll state ───────────────────────────────────────────────────────
+  const updateScrollState = () => {
     const el = tabScrollRef.current;
     if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 4);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
   };
 
   useEffect(() => {
-    const el = tabScrollRef.current;
-    if (!el) return;
-    checkTabScroll();
-    el.addEventListener('scroll', checkTabScroll);
-    window.addEventListener('resize', checkTabScroll);
-    return () => {
-      el.removeEventListener('scroll', checkTabScroll);
-      window.removeEventListener('resize', checkTabScroll);
-    };
-  }, [show]);
+    if (show && isWidgetMode) {
+      setTimeout(updateScrollState, 100);
+    }
+  }, [show, isWidgetMode]);
 
   const scrollTabs = (dir) => {
     const el = tabScrollRef.current;
     if (!el) return;
-    el.scrollBy({ left: dir * 100, behavior: 'smooth' });
+    el.scrollBy({ left: dir * 80, behavior: 'smooth' });
+    setTimeout(updateScrollState, 150);
   };
 
   if (!show) return null;
 
-  const {
-    theme, setTheme,
-    fontSize, setFontSize,
-    fontFamily, setFontFamily,
-    background, setBackground,
-    fontWeight, setFontWeight,
-    soundEffects, setSoundEffects,
-    bedtimeMode, setBedtimeMode,
-    focusMode, setFocusMode,
-    animationsEnabled, setAnimationsEnabled,
-    ttsEnabled, setTtsEnabled,
-    ttsSettings, setTtsSettings,
-    selectedVoice, setSelectedVoice,
-    bubbleColor, setBubbleColor
-  } = settings;
+  // ── Bedtime-aware style tokens ─────────────────────────────────────────────
+  const bedtime = settings.bedtimeMode;
 
-  // ── Issue #2: off-white modal background so options stand out ──────────────
-  // Light mode: warm off-white (#f7f6f3) instead of near-transparent white/70
-  // which blended into backgrounds and made it hard to distinguish sections.
-  const glassStyle = !bedtimeMode
-    ? "bg-[#f7f6f3] dark:bg-gray-900/95 border border-black/10 dark:border-gray-700/30 shadow-2xl"
-    : "bg-[#e0e5ec] shadow-[8px_8px_16px_#b8bdc4,-8px_-8px_16px_#ffffff]";
+  const glassStyle = bedtime
+    ? 'bg-[#e0e5ec] shadow-[4px_4px_8px_#b8bdc4,-4px_-4px_8px_#ffffff]'
+    : 'bg-white dark:bg-gray-900 shadow-2xl border border-gray-200/60 dark:border-gray-700/50';
 
-  // Card style for sections — slightly darker than the modal bg so groups are distinct
-  const cardStyle = !bedtimeMode
-    ? "bg-white dark:bg-gray-800/60 border border-black/8 dark:border-gray-700/30 rounded-xl"
-    : "bg-[#e8edf3] shadow-[3px_3px_6px_#c8ced6,-3px_-3px_6px_#f8fdff] rounded-xl";
+  const sidebarStyle = bedtime
+    ? 'bg-[#d5dae1] border-r border-[#c8ced6]'
+    : 'bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700';
 
-  const textColor = bedtimeMode ? 'text-[#1a0f08]' : 'text-gray-900 dark:text-white';
-  const labelColor = bedtimeMode ? 'text-[#1a0f08]' : 'text-gray-700 dark:text-gray-300';
-  const mutedColor = bedtimeMode ? 'text-[#5a4a3a]' : 'text-gray-500 dark:text-gray-400';
-  const dividerColor = bedtimeMode ? 'border-[#c8ced6]' : 'border-black/8 dark:border-gray-700/30';
+  const activeTabStyle = bedtime
+    ? 'bg-[#c8ced6] shadow-[inset_2px_2px_4px_#b8bdc4,inset_-2px_-2px_4px_#ffffff] text-[#1a0f08]'
+    : 'bg-white dark:bg-gray-900 text-purple-600 dark:text-purple-400 shadow-sm border border-gray-200 dark:border-gray-700';
 
-  const buttonGlassStyle = !bedtimeMode
-    ? "bg-gray-100 dark:bg-gray-800/50 border border-black/8 dark:border-gray-700/30"
-    : "bg-[#e0e5ec] shadow-[4px_4px_8px_#b8bdc4,-4px_-4px_8px_#ffffff]";
+  const inactiveTabStyle = bedtime
+    ? 'text-[#555] hover:bg-[#d5dae1]'
+    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white';
 
-  const headerBg = !bedtimeMode
-    ? "bg-[#f0efe9] dark:bg-gray-800/60"
-    : "bg-[#e0e5ec]";
+  const headingStyle   = bedtime ? 'text-[#1a0f08]' : 'text-gray-900 dark:text-white';
+  const textMuted      = bedtime ? 'text-[#555]'    : 'text-gray-500 dark:text-gray-400';
+  const labelStyle     = bedtime ? 'text-[#333]'    : 'text-gray-700 dark:text-gray-300';
+  const inputStyle     = bedtime
+    ? 'bg-[#d5dae1] shadow-[inset_2px_2px_4px_#b8bdc4,inset_-2px_-2px_4px_#ffffff] text-[#1a0f08] border-transparent'
+    : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white';
 
-  function renderCategoryContent() {
-    return (
-      <div className="space-y-4 pb-6">
+  const divider = bedtime
+    ? 'border-[#c8ced6]'
+    : 'border-gray-200 dark:border-gray-700';
 
-        {/* ── Appearance ── */}
-        {activeCategory === 'appearance' && (
-          <>
-            <div className={`${cardStyle} p-4`}>
-              <SectionLabel label="Theme" tooltip={TOOLTIPS.theme} labelColor={labelColor} />
+  // ── Content renderer ───────────────────────────────────────────────────────
+  const renderContent = () => {
+    switch (activeCategory) {
+
+      // ────────────────────────── APPEARANCE ──────────────────────────────────
+      case 'appearance':
+        return (
+          <div className="space-y-6">
+            {/* Theme */}
+            <section>
+              <h3 className={`text-sm font-semibold mb-3 ${headingStyle}`}>Theme</h3>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { value: 'light', icon: Sun, label: 'Light' },
-                  { value: 'dark', icon: Moon, label: 'Dark' },
-                  { value: 'system', icon: Monitor, label: 'System' }
-                ].map((t) => (
+                  { id: 'light',  label: 'Light',  icon: Sun },
+                  { id: 'dark',   label: 'Dark',   icon: Moon },
+                  { id: 'system', label: 'System', icon: Monitor },
+                ].map(({ id, label, icon: Icon }) => (
                   <button
-                    key={t.value}
-                    onClick={() => { setTheme(t.value); playSound('click'); }}
-                    className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-lg transition-all cursor-pointer text-xs font-medium ${
-                      theme === t.value
-                        ? bedtimeMode
-                          ? 'bg-[#d8dde3] shadow-[inset_3px_3px_6px_#b8bdc4,inset_-3px_-3px_6px_#f8fdff] text-[#1a0f08]'
-                          : 'bg-purple-500 text-white shadow-md'
-                        : `${buttonGlassStyle} ${labelColor} hover:opacity-80`
+                    key={id}
+                    onClick={() => { settings.setTheme(id); playSound?.('click'); }}
+                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all cursor-pointer ${
+                      settings.theme === id
+                        ? bedtime
+                          ? 'border-[#8b5a3c] bg-[#d5dae1] shadow-[inset_2px_2px_4px_#b8bdc4]'
+                          : 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
+                        : `border-transparent ${bedtime ? 'hover:bg-[#d5dae1]' : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'} ${labelStyle}`
                     }`}
                   >
-                    <t.icon className="w-4 h-4" />
-                    {t.label}
+                    <Icon className="w-5 h-5" />
+                    <span className="text-xs font-medium">{label}</span>
                   </button>
                 ))}
               </div>
-            </div>
+            </section>
 
-            <div className={`${cardStyle} p-4`}>
-              <SectionLabel label="Chat Bubble Color" tooltip="Choose your preferred chat bubble color scheme." labelColor={labelColor} />
-              <div className="grid grid-cols-2 gap-2">
+            {/* Background */}
+            <section>
+              <h3 className={`text-sm font-semibold mb-3 ${headingStyle}`}>Background Theme</h3>
+              <div className="grid grid-cols-3 gap-2">
+                {Object.entries(BACKGROUND_MAP).map(([key, gradient]) => (
+                  <div
+                    key={key}
+                    className={`relative rounded-xl overflow-hidden cursor-pointer transition-all hover:scale-105 ${
+                      settings.background === key ? 'ring-2 ring-purple-500 ring-offset-1' : ''
+                    }`}
+                    style={{ background: gradient, height: 64 }}
+                    onClick={() => { settings.setBackground(key); playSound?.('click'); }}
+                    onMouseEnter={() => onPreviewBackground?.(key)}
+                    onMouseLeave={() => onPreviewBackground?.(null)}
+                  >
+                    <div className="absolute inset-0 flex items-end justify-center pb-1.5">
+                      <span className="text-[10px] font-semibold text-white drop-shadow capitalize">{key}</span>
+                    </div>
+                    {settings.background === key && (
+                      <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-white/90 flex items-center justify-center">
+                        <Check className="w-2.5 h-2.5 text-purple-600" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Chat Bubble Color */}
+            <section>
+              <h3 className={`text-sm font-semibold mb-3 ${headingStyle}`}>Chat Bubble Color</h3>
+              <div className="grid grid-cols-4 gap-2">
                 {Object.entries(CHAT_BUBBLE_COLORS).map(([key, palette]) => (
                   <button
                     key={key}
-                    onClick={() => { setBubbleColor(key); playSound('click'); }}
-                    className={`p-3 rounded-lg transition-all cursor-pointer text-left ${
-                      bubbleColor === key
-                        ? bedtimeMode
-                          ? 'bg-[#d8dde3] shadow-[inset_3px_3px_6px_#b8bdc4,inset_-3px_-3px_6px_#f8fdff]'
-                          : 'ring-2 ring-purple-500 bg-purple-50 dark:bg-purple-900/20'
-                        : `${buttonGlassStyle} hover:opacity-80`
+                    onClick={() => { settings.setBubbleColor(key); playSound?.('click'); }}
+                    className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all cursor-pointer ${
+                      settings.bubbleColor === key
+                        ? bedtime ? 'border-[#8b5a3c]' : 'border-purple-500'
+                        : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600'
                     }`}
                   >
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <div className="w-4 h-4 rounded-full border border-gray-300/50" style={{ backgroundColor: palette.user }} />
-                      <div className="w-4 h-4 rounded-full border border-gray-300/50" style={{ backgroundColor: palette.ai }} />
+                    <div className="flex gap-0.5">
+                      <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: palette.user }} />
+                      <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: palette.ai }} />
                     </div>
-                    <span className={`text-xs font-medium ${labelColor}`}>{palette.name}</span>
+                    <span className={`text-[10px] font-medium truncate w-full text-center ${labelStyle}`}>{palette.name}</span>
                   </button>
                 ))}
               </div>
-            </div>
+            </section>
 
-            {/* Background — previews use inline style since BACKGROUND_MAP is now CSS strings */}
-            <div className={`${cardStyle} p-4`}>
-              <SectionLabel label="Background" tooltip={TOOLTIPS.background} labelColor={labelColor} />
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { value: 'moon',     label: 'Moon' },
-                  { value: 'ocean',    label: 'Ocean' },
-                  { value: 'beach',    label: 'Beach' },
-                  { value: 'forest',   label: 'Forest' },
-                  { value: 'sunset',   label: 'Sunset' },
-                  { value: 'twilight', label: 'Twilight' }
-                ].map((bg) => (
-                  <button
-                    key={bg.value}
-                    onClick={() => { setBackground(bg.value); playSound('click'); }}
-                    onMouseEnter={() => onPreviewBackground(bg.value)}
-                    onMouseLeave={() => onPreviewBackground(background)}
-                    className={`py-2.5 px-3 rounded-lg transition-all cursor-pointer relative overflow-hidden text-left ${
-                      background === bg.value
-                        ? bedtimeMode
-                          ? 'ring-2 ring-[#8b5a3c]'
-                          : 'ring-2 ring-purple-500'
-                        : ''
-                    }`}
-                    style={{ background: BACKGROUND_MAP[bg.value] }}
-                  >
-                    {/* Readable label overlay */}
-                    <span
-                      className="text-xs font-semibold relative z-10 px-1.5 py-0.5 rounded"
-                      style={{ background: 'rgba(0,0,0,0.35)', color: '#fff' }}
-                    >
-                      {bg.label}
-                    </span>
-                    {background === bg.value && (
-                      <span
-                        className="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-full flex items-center justify-center"
-                        style={{ background: 'rgba(255,255,255,0.9)' }}
-                      >
-                        <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                          <path d="M1.5 4l2 2 3-3" stroke="#7c3aed" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </span>
-                    )}
-                  </button>
-                ))}
+            {/* Bedtime Mode */}
+            <section>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className={`text-sm font-semibold ${headingStyle}`}>Bedtime Mode</h3>
+                  <p className={`text-xs mt-0.5 ${textMuted}`}>Warm neumorphic design for night reading</p>
+                </div>
+                <button
+                  onClick={() => { settings.setBedtimeMode(v => !v); playSound?.('click'); }}
+                  className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer ${
+                    settings.bedtimeMode
+                      ? bedtime ? 'bg-[#8b5a3c]' : 'bg-purple-600'
+                      : 'bg-gray-300 dark:bg-gray-600'
+                  }`}
+                >
+                  <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${settings.bedtimeMode ? 'left-6.5' : 'left-0.5'}`} />
+                </button>
               </div>
-            </div>
-          </>
-        )}
+            </section>
+          </div>
+        );
 
-        {/* ── Accessibility ── */}
-        {activeCategory === 'accessibility' && (
-          <>
-            <div className={`${cardStyle} p-4`}>
-              <SectionLabel label="Font Size" tooltip={TOOLTIPS.fontSize} labelColor={labelColor} />
-              <div className="flex gap-1.5">
-                {['XS', 'S', 'M', 'L', 'XL'].map((size) => (
+      // ────────────────────────── TYPOGRAPHY ──────────────────────────────────
+      case 'typography':
+        return (
+          <div className="space-y-6">
+            {/* Font Size */}
+            <section>
+              <h3 className={`text-sm font-semibold mb-3 ${headingStyle}`}>Font Size</h3>
+              <div className="flex gap-2">
+                {Object.keys(FONT_SIZE_MAP).map((size) => (
                   <button
                     key={size}
-                    onClick={() => { setFontSize(size); playSound('click'); }}
-                    className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      fontSize === size
-                        ? bedtimeMode
-                          ? 'bg-[#d8dde3] shadow-[inset_3px_3px_6px_#b8bdc4,inset_-3px_-3px_6px_#f8fdff] text-[#1a0f08]'
-                          : 'bg-purple-500 text-white shadow-md'
-                        : `${buttonGlassStyle} ${labelColor} hover:opacity-80`
+                    onClick={() => { settings.setFontSize(size); playSound?.('click'); }}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all cursor-pointer ${
+                      settings.fontSize === size
+                        ? bedtime
+                          ? 'border-[#8b5a3c] bg-[#d5dae1] shadow-[inset_2px_2px_4px_#b8bdc4] text-[#1a0f08]'
+                          : 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
+                        : `border-transparent ${bedtime ? 'bg-[#d5dae1] hover:bg-[#c8ced6]' : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'} ${labelStyle}`
                     }`}
                   >
                     {size}
                   </button>
                 ))}
               </div>
-            </div>
+            </section>
 
-            <div className={`${cardStyle} p-4`}>
-              <SectionLabel label="Font Family" tooltip={TOOLTIPS.fontFamily} labelColor={labelColor} />
-              <select
-                value={fontFamily}
-                onChange={(e) => { setFontFamily(e.target.value); playSound('click'); }}
-                className={`w-full p-2.5 rounded-lg text-sm ${buttonGlassStyle} ${textColor} cursor-pointer`}
-              >
-                <option value="standard">Standard (Sans-serif)</option>
-                <option value="lexend">Lexend (Dyslexia-friendly)</option>
-                <option value="times">Times New Roman</option>
-              </select>
-            </div>
-
-            <div className={`${cardStyle} p-4`}>
-              <SectionLabel label="Font Weight" tooltip={TOOLTIPS.fontWeight} labelColor={labelColor} />
-              <div className="grid grid-cols-3 gap-2">
+            {/* Font Family */}
+            <section>
+              <h3 className={`text-sm font-semibold mb-3 ${headingStyle}`}>Font Family</h3>
+              <div className="space-y-2">
                 {[
-                  { value: 'regular', label: 'Regular' },
-                  { value: 'bold', label: 'Bold' },
-                  { value: 'italic', label: 'Italic' }
-                ].map((fw) => (
+                  { id: 'standard', label: 'Standard (Inter)',      style: 'font-sans' },
+                  { id: 'lexend',   label: 'Lexend (Dyslexia-friendly)', style: "font-['Lexend',sans-serif]" },
+                  { id: 'times',    label: 'Times New Roman',       style: 'font-serif' },
+                ].map(({ id, label, style }) => (
                   <button
-                    key={fw.value}
-                    onClick={() => { setFontWeight(fw.value); playSound('click'); }}
-                    className={`py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                      fontWeight === fw.value
-                        ? bedtimeMode
-                          ? 'bg-[#d8dde3] shadow-[inset_3px_3px_6px_#b8bdc4,inset_-3px_-3px_6px_#f8fdff] text-[#1a0f08]'
-                          : 'bg-purple-500 text-white shadow-md'
-                        : `${buttonGlassStyle} ${labelColor} hover:opacity-80`
+                    key={id}
+                    onClick={() => { settings.setFontFamily(id); playSound?.('click'); }}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all cursor-pointer ${style} ${
+                      settings.fontFamily === id
+                        ? bedtime
+                          ? 'border-[#8b5a3c] bg-[#d5dae1] shadow-[inset_2px_2px_4px_#b8bdc4] text-[#1a0f08]'
+                          : 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
+                        : `border-transparent ${bedtime ? 'bg-[#d5dae1] hover:bg-[#c8ced6]' : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'} ${labelStyle}`
                     }`}
                   >
-                    {fw.label}
+                    <span className="text-sm">{label}</span>
+                    {settings.fontFamily === id && <Check className="w-4 h-4 flex-shrink-0" />}
                   </button>
                 ))}
               </div>
-            </div>
-          </>
-        )}
+            </section>
 
-        {/* ── Audio ── */}
-        {activeCategory === 'audio' && (
-          <>
-            <div className={`${cardStyle} p-4`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <span className={`text-sm font-semibold ${labelColor}`}>Text-to-Speech</span>
-                  <Tooltip text={TOOLTIPS.ttsToggle} />
-                </div>
-                <ToggleSwitch enabled={ttsEnabled} onToggle={() => { setTtsEnabled(!ttsEnabled); playSound('click'); }} />
+            {/* Font Weight */}
+            <section>
+              <h3 className={`text-sm font-semibold mb-3 ${headingStyle}`}>Font Style</h3>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'regular', label: 'Regular' },
+                  { id: 'bold',    label: 'Bold'    },
+                  { id: 'italic',  label: 'Italic'  },
+                ].map(({ id, label }) => (
+                  <button
+                    key={id}
+                    onClick={() => { settings.setFontWeight(id); playSound?.('click'); }}
+                    className={`py-2 rounded-lg text-sm border transition-all cursor-pointer ${
+                      id === 'bold' ? 'font-bold' : id === 'italic' ? 'italic' : 'font-normal'
+                    } ${
+                      settings.fontWeight === id
+                        ? bedtime
+                          ? 'border-[#8b5a3c] bg-[#d5dae1] shadow-[inset_2px_2px_4px_#b8bdc4] text-[#1a0f08]'
+                          : 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
+                        : `border-transparent ${bedtime ? 'bg-[#d5dae1] hover:bg-[#c8ced6]' : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'} ${labelStyle}`
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-            </div>
-
-            <div className={`${cardStyle} p-4 space-y-4`}>
-              <div>
-                <SectionLabel label="Voice" tooltip={TOOLTIPS.ttsVoice} labelColor={labelColor} />
-                <select
-                  value={selectedVoice?.name || ''}
-                  onChange={(e) => { const voice = availableVoices.find(v => v.name === e.target.value); setSelectedVoice(voice); playSound('click'); }}
-                  disabled={!ttsEnabled}
-                  className={`w-full p-2.5 rounded-lg text-sm ${buttonGlassStyle} ${textColor} disabled:opacity-40 cursor-pointer`}
-                >
-                  <option value="">Default Voice</option>
-                  {availableVoices.map((voice, idx) => (
-                    <option key={idx} value={voice.name}>{voice.name} ({voice.lang})</option>
-                  ))}
-                </select>
-              </div>
-
-              {[
-                { key: 'rate',   label: 'Speed',  tooltip: TOOLTIPS.speechRate,   min: 0.5, max: 2, step: 0.1, display: v => `${v}x` },
-                { key: 'pitch',  label: 'Pitch',  tooltip: TOOLTIPS.speechPitch,  min: 0.5, max: 2, step: 0.1, display: v => `${v}` },
-                { key: 'volume', label: 'Volume', tooltip: TOOLTIPS.speechVolume, min: 0,   max: 1, step: 0.1, display: v => `${Math.round(v * 100)}%` }
-              ].map(({ key, label, tooltip, min, max, step, display }) => (
-                <div key={key}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center">
-                      <span className={`text-xs font-semibold ${labelColor}`}>{label}</span>
-                      <Tooltip text={tooltip} />
-                    </div>
-                    <span className={`text-xs font-medium ${mutedColor}`}>{display(ttsSettings[key])}</span>
-                  </div>
-                  <input
-                    type="range" min={min} max={max} step={step}
-                    value={ttsSettings[key]}
-                    onChange={(e) => { setTtsSettings(prev => ({ ...prev, [key]: parseFloat(e.target.value) })); }}
-                    disabled={!ttsEnabled}
-                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-purple-600 disabled:opacity-40"
-                  />
-                </div>
-              ))}
-            </div>
-
-            <div className={`${cardStyle} p-4`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <Zap className={`w-4 h-4 mr-2 ${bedtimeMode ? 'text-[#1a0f08]' : 'text-yellow-500'}`} />
-                  <span className={`text-sm font-semibold ${labelColor}`}>Sound Effects</span>
-                  <Tooltip text={TOOLTIPS.soundEffects} />
-                </div>
-                <ToggleSwitch enabled={soundEffects} onToggle={() => { setSoundEffects(!soundEffects); if (!soundEffects) playSound('click'); }} />
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ── Modes ── */}
-        {activeCategory === 'modes' && (
-          <div className={`${cardStyle} divide-y ${dividerColor}`}>
-            {[
-              { icon: Moon,  iconColor: bedtimeMode ? 'text-[#1a0f08]' : 'text-indigo-500', label: 'Bedtime Mode', tooltip: TOOLTIPS.bedtimeMode,  value: bedtimeMode,        onToggle: () => { setBedtimeMode(!bedtimeMode); playSound('click'); },        color: 'bg-indigo-600' },
-              { icon: Focus, iconColor: bedtimeMode ? 'text-[#1a0f08]' : 'text-blue-500',   label: 'Focus Mode',   tooltip: TOOLTIPS.focusMode,    value: focusMode,          onToggle: () => { setFocusMode(!focusMode); playSound('click'); },            color: 'bg-blue-600' },
-              { icon: Film,  iconColor: bedtimeMode ? 'text-[#1a0f08]' : 'text-pink-500',   label: 'Animations',   tooltip: TOOLTIPS.animations,   value: animationsEnabled,  onToggle: () => { setAnimationsEnabled(!animationsEnabled); playSound('click'); }, color: 'bg-pink-600' }
-            ].map(({ icon: Icon, iconColor, label, tooltip, value, onToggle, color }) => (
-              <div key={label} className="flex items-center justify-between px-4 py-3.5">
-                <div className="flex items-center">
-                  <Icon className={`w-4 h-4 mr-2.5 ${iconColor}`} />
-                  <span className={`text-sm font-semibold ${labelColor}`}>{label}</span>
-                  <Tooltip text={tooltip} />
-                </div>
-                <ToggleSwitch enabled={value} onToggle={onToggle} color={color} />
-              </div>
-            ))}
+            </section>
           </div>
-        )}
+        );
 
-      </div>
-    );
-  }
+      // ────────────────────────── SOUND & TTS ─────────────────────────────────
+      case 'sound':
+        return (
+          <div className="space-y-6">
+            <section className="flex items-center justify-between">
+              <div>
+                <h3 className={`text-sm font-semibold ${headingStyle}`}>Sound Effects</h3>
+                <p className={`text-xs mt-0.5 ${textMuted}`}>UI click and notification sounds</p>
+              </div>
+              <button
+                onClick={() => { settings.setSoundEffects(v => !v); playSound?.('click'); }}
+                className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer ${settings.soundEffects ? (bedtime ? 'bg-[#8b5a3c]' : 'bg-purple-600') : 'bg-gray-300 dark:bg-gray-600'}`}
+              >
+                <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${settings.soundEffects ? 'left-6.5' : 'left-0.5'}`} />
+              </button>
+            </section>
 
-  return (
-    <AnimatePresence>
-      {show && (
+            <section className="flex items-center justify-between">
+              <div>
+                <h3 className={`text-sm font-semibold ${headingStyle}`}>Text-to-Speech</h3>
+                <p className={`text-xs mt-0.5 ${textMuted}`}>Read AI responses aloud</p>
+              </div>
+              <button
+                onClick={() => { settings.setTtsEnabled(v => !v); playSound?.('click'); }}
+                className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer ${settings.ttsEnabled ? (bedtime ? 'bg-[#8b5a3c]' : 'bg-purple-600') : 'bg-gray-300 dark:bg-gray-600'}`}
+              >
+                <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${settings.ttsEnabled ? 'left-6.5' : 'left-0.5'}`} />
+              </button>
+            </section>
+
+            {settings.ttsEnabled && (
+              <>
+                {[
+                  { key: 'rate',   label: 'Speed',  min: 0.5, max: 2,   step: 0.1 },
+                  { key: 'pitch',  label: 'Pitch',  min: 0.5, max: 2,   step: 0.1 },
+                  { key: 'volume', label: 'Volume', min: 0,   max: 1,   step: 0.1 },
+                ].map(({ key, label, min, max, step }) => (
+                  <section key={key}>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className={`text-sm font-semibold ${headingStyle}`}>{label}</h3>
+                      <span className={`text-xs ${textMuted}`}>{settings.ttsSettings[key]?.toFixed(1)}</span>
+                    </div>
+                    <input
+                      type="range" min={min} max={max} step={step}
+                      value={settings.ttsSettings[key] || 1}
+                      onChange={(e) => settings.setTtsSettings(prev => ({ ...prev, [key]: parseFloat(e.target.value) }))}
+                      className="w-full accent-purple-600"
+                    />
+                  </section>
+                ))}
+              </>
+            )}
+          </div>
+        );
+
+      // ────────────────────────── VOICE ───────────────────────────────────────
+      case 'voice':
+        return (
+          <div className="space-y-4">
+            <h3 className={`text-sm font-semibold ${headingStyle}`}>Select Voice</h3>
+            {availableVoices.length === 0 ? (
+              <p className={`text-sm ${textMuted}`}>No voices available. Check browser TTS support.</p>
+            ) : (
+              <div className="space-y-1 max-h-64 overflow-y-auto scrollbar-hide">
+                {availableVoices.map((voice) => (
+                  <button
+                    key={voice.name}
+                    onClick={() => { settings.setSelectedVoice(voice); playSound?.('click'); }}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-all cursor-pointer ${
+                      settings.selectedVoice?.name === voice.name
+                        ? bedtime
+                          ? 'bg-[#d5dae1] shadow-[inset_2px_2px_4px_#b8bdc4] text-[#1a0f08]'
+                          : 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
+                        : `${bedtime ? 'hover:bg-[#d5dae1]' : 'hover:bg-gray-100 dark:hover:bg-gray-800'} ${labelStyle}`
+                    }`}
+                  >
+                    <div>
+                      <p className="text-sm font-medium truncate">{voice.name}</p>
+                      <p className={`text-xs ${textMuted}`}>{voice.lang}</p>
+                    </div>
+                    {settings.selectedVoice?.name === voice.name && <Check className="w-4 h-4 flex-shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+
+      // ────────────────────────── ACCESSIBILITY ───────────────────────────────
+      case 'accessibility':
+        return (
+          <div className="space-y-6">
+            <section className="flex items-center justify-between">
+              <div>
+                <h3 className={`text-sm font-semibold ${headingStyle}`}>Animations</h3>
+                <p className={`text-xs mt-0.5 ${textMuted}`}>Reduce motion for accessibility</p>
+              </div>
+              <button
+                onClick={() => { settings.setAnimationsEnabled(v => !v); playSound?.('click'); }}
+                className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer ${settings.animationsEnabled ? (bedtime ? 'bg-[#8b5a3c]' : 'bg-purple-600') : 'bg-gray-300 dark:bg-gray-600'}`}
+              >
+                <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${settings.animationsEnabled ? 'left-6.5' : 'left-0.5'}`} />
+              </button>
+            </section>
+
+            <section className="flex items-center justify-between">
+              <div>
+                <h3 className={`text-sm font-semibold ${headingStyle}`}>Auto-Scroll</h3>
+                <p className={`text-xs mt-0.5 ${textMuted}`}>Automatically scroll to new messages</p>
+              </div>
+              <button
+                onClick={() => { settings.setAutoScroll(v => !v); playSound?.('click'); }}
+                className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer ${settings.autoScroll ? (bedtime ? 'bg-[#8b5a3c]' : 'bg-purple-600') : 'bg-gray-300 dark:bg-gray-600'}`}
+              >
+                <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${settings.autoScroll ? 'left-6.5' : 'left-0.5'}`} />
+              </button>
+            </section>
+          </div>
+        );
+
+      // ────────────────────────── ABOUT ───────────────────────────────────────
+      case 'about':
+        return (
+          <div className="space-y-4">
+            <div className={`text-center p-6 rounded-2xl ${bedtime ? 'bg-[#d5dae1] shadow-[inset_2px_2px_4px_#b8bdc4,inset_-2px_-2px_4px_#ffffff]' : 'bg-gradient-to-br from-purple-500/10 to-cyan-500/10 dark:from-purple-900/20 dark:to-cyan-900/20'}`}>
+              <div className="text-3xl mb-2">✨</div>
+              <h3 className={`text-lg font-bold ${headingStyle}`}>AI Shine</h3>
+              <p className={`text-sm mt-1 ${textMuted}`}>Your intelligent learning companion</p>
+              <p className={`text-xs mt-3 ${textMuted}`}>Powered by Gemini · MongoDB Atlas · AWS Bedrock</p>
+            </div>
+            <p className={`text-xs text-center ${textMuted}`}>
+              Ask any question about AI, machine learning, or technology.
+            </p>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  // ── Widget mode: full-screen takeover with horizontal tabs ─────────────────
+  if (isWidgetMode) {
+    return (
+      <AnimatePresence>
         <motion.div
+          key="widget-settings"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className={`${isWidgetMode
-            ? 'absolute inset-0 z-50'
-            : 'fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4'
-          }`}
-          onClick={isWidgetMode ? undefined : onClose}
+          className="absolute inset-0 z-50 flex flex-col overflow-hidden rounded-2xl"
         >
-          <motion.div
-            initial={{ scale: 0.95, y: 16 }}
-            animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.95, y: 16 }}
-            onClick={(e) => e.stopPropagation()}
-            className={`${glassStyle} overflow-hidden ${
-              isWidgetMode
-                ? 'w-full h-full rounded-none flex flex-col'
-                : 'rounded-2xl max-w-4xl w-full h-[80vh] flex'
-            }`}
-          >
+          <div className={`${glassStyle} w-full h-full flex flex-col rounded-2xl overflow-hidden`}>
 
-            {isWidgetMode ? (
-              <>
-                {/* ── Widget: compact header + tab bar ── */}
-                <div className={`flex-shrink-0 ${headerBg} border-b ${dividerColor}`}>
-                  <div className="flex items-center justify-between px-4 pt-3 pb-2">
-                    <div className="flex items-center gap-2">
-                      <Settings className={`w-4 h-4 ${bedtimeMode ? 'text-[#1a0f08]' : 'text-purple-500'}`} />
-                      <span className={`text-sm font-bold ${textColor}`}>Settings</span>
-                    </div>
-                    <button
-                      onClick={onClose}
-                      className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
-                        bedtimeMode ? 'hover:bg-[#d1d6dc] text-[#1a0f08]' : 'hover:bg-black/8 text-gray-500 dark:text-gray-400'
-                      }`}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                        <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-                      </svg>
-                    </button>
-                  </div>
+            {/* Header */}
+            <div className={`flex items-center justify-between px-3 py-2.5 border-b flex-shrink-0 ${bedtime ? 'border-[#c8ced6] bg-[#e0e5ec]' : 'border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm'}`}>
+              <span className={`text-sm font-bold ${headingStyle}`}>Settings</span>
+              <button onClick={onClose} className={`p-1.5 rounded-lg transition-all cursor-pointer ${bedtime ? 'hover:bg-[#d5dae1] text-[#1a0f08]' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-                  <div className="relative flex items-center px-1 pb-2 gap-0.5">
-                    <AnimatePresence>
-                      {canScrollLeft && (
-                        <motion.button
-                          initial={{ opacity: 0, width: 0 }}
-                          animate={{ opacity: 1, width: 24 }}
-                          exit={{ opacity: 0, width: 0 }}
-                          onClick={() => scrollTabs(-1)}
-                          className={`flex-shrink-0 h-6 w-6 flex items-center justify-center rounded-md cursor-pointer ${
-                            bedtimeMode ? 'bg-[#d8dde3] text-[#1a0f08]' : 'bg-black/8 text-gray-600 dark:text-gray-300'
-                          }`}
-                        >
-                          <ChevronLeft className="w-3.5 h-3.5" />
-                        </motion.button>
-                      )}
-                    </AnimatePresence>
+            {/* Horizontal tab bar */}
+            <div className={`relative flex items-center flex-shrink-0 border-b ${bedtime ? 'border-[#c8ced6] bg-[#e0e5ec]' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800'}`}>
+              {canScrollLeft && (
+                <button onClick={() => scrollTabs(-1)} className={`absolute left-0 z-10 p-1.5 ${bedtime ? 'bg-[#e0e5ec]' : 'bg-gray-50 dark:bg-gray-800'}`}>
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <div
+                ref={tabScrollRef}
+                className="flex gap-1 overflow-x-auto scrollbar-hide px-2 py-1.5"
+                style={{ minHeight: 0, scrollbarWidth: 'none' }}
+                onScroll={updateScrollState}
+              >
+                {CATEGORIES.map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => { setActiveCategory(id); playSound?.('click'); }}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all cursor-pointer flex-shrink-0 ${
+                      activeCategory === id ? activeTabStyle : inactiveTabStyle
+                    }`}
+                  >
+                    <Icon className="w-3 h-3 flex-shrink-0" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {canScrollRight && (
+                <button onClick={() => scrollTabs(1)} className={`absolute right-0 z-10 p-1.5 ${bedtime ? 'bg-[#e0e5ec]' : 'bg-gray-50 dark:bg-gray-800'}`}>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
 
-                    <div
-                      ref={tabScrollRef}
-                      className="flex gap-1 overflow-x-auto flex-1"
-                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-                    >
-                      {SETTINGS_CATEGORIES.map((category) => (
-                        <button
-                          key={category.id}
-                          onClick={() => { setActiveCategory(category.id); playSound('click'); }}
-                          className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
-                            activeCategory === category.id
-                              ? bedtimeMode
-                                ? 'bg-[#d8dde3] shadow-[inset_3px_3px_6px_#b8bdc4,inset_-3px_-3px_6px_#f8fdff] text-[#1a0f08]'
-                                : 'bg-purple-500 text-white shadow-sm'
-                              : bedtimeMode
-                                ? 'text-[#1a0f08] hover:bg-[#d8dde3]'
-                                : 'text-gray-600 dark:text-gray-300 hover:bg-black/8 dark:hover:bg-gray-700/30'
-                          }`}
-                        >
-                          <category.icon className="w-3 h-3" />
-                          {category.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <AnimatePresence>
-                      {canScrollRight && (
-                        <motion.button
-                          initial={{ opacity: 0, width: 0 }}
-                          animate={{ opacity: 1, width: 24 }}
-                          exit={{ opacity: 0, width: 0 }}
-                          onClick={() => scrollTabs(1)}
-                          className={`flex-shrink-0 h-6 w-6 flex items-center justify-center rounded-md cursor-pointer ${
-                            bedtimeMode ? 'bg-[#d8dde3] text-[#1a0f08]' : 'bg-black/8 text-gray-600 dark:text-gray-300'
-                          }`}
-                        >
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </motion.button>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                {/* ── Scrollable content (minHeight:0 is the scroll fix) ── */}
-                <div
-                  className="flex-1 overflow-y-auto overscroll-contain px-3 pt-3"
-                  style={{ minHeight: 0 }}
-                >
-                  {renderCategoryContent()}
-                </div>
-              </>
-            ) : (
-              /* ── Full-page layout ── */
-              <>
-                <div className={`w-64 flex-shrink-0 ${headerBg} border-r ${dividerColor} p-4`}>
-                  <div className="flex items-center gap-2 mb-6 px-2">
-                    <Settings className={`w-6 h-6 ${bedtimeMode ? 'text-[#1a0f08]' : 'text-purple-600'}`} />
-                    <h2 className={`text-xl font-bold ${textColor}`}>Settings</h2>
-                  </div>
-                  <nav className="space-y-1.5">
-                    {SETTINGS_CATEGORIES.map((category) => (
-                      <button
-                        key={category.id}
-                        onClick={() => { setActiveCategory(category.id); playSound('click'); }}
-                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all cursor-pointer ${
-                          activeCategory === category.id
-                            ? bedtimeMode
-                              ? 'bg-[#e0e5ec] shadow-[inset_4px_4px_8px_#b8bdc4,inset_-4px_-4px_8px_#ffffff] text-[#1a0f08]'
-                              : 'bg-purple-500 text-white shadow-md'
-                            : bedtimeMode
-                              ? 'hover:bg-[#d1d6dc] text-[#1a0f08]'
-                              : 'hover:bg-black/6 dark:hover:bg-gray-700/20 text-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        <category.icon className="w-4 h-4" />
-                        <span className="text-sm font-medium">{category.label}</span>
-                      </button>
-                    ))}
-                  </nav>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-6" style={{ minHeight: 0 }}>
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className={`text-2xl font-bold ${textColor}`}>
-                      {SETTINGS_CATEGORIES.find(c => c.id === activeCategory)?.label}
-                    </h3>
-                    <button
-                      onClick={onClose}
-                      className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
-                        bedtimeMode ? 'hover:bg-[#d1d6dc] text-[#1a0f08]' : 'hover:bg-black/8 text-gray-500'
-                      }`}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                        <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-                      </svg>
-                    </button>
-                  </div>
-                  {renderCategoryContent()}
-                </div>
-              </>
-            )}
-          </motion.div>
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-3 scrollbar-hide">
+              {renderContent()}
+            </div>
+          </div>
         </motion.div>
-      )}
+      </AnimatePresence>
+    );
+  }
+
+  // ── Full-page mode: backdrop + sidebar layout ──────────────────────────────
+  return (
+    <AnimatePresence>
+      <motion.div
+        key="fullpage-settings"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.95, opacity: 0 }}
+          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+          onClick={(e) => e.stopPropagation()}
+          className={`${glassStyle} rounded-3xl max-w-4xl w-full h-[80vh] flex overflow-hidden`}
+        >
+          {/* Sidebar */}
+          <div className={`w-56 flex-shrink-0 flex flex-col ${sidebarStyle}`}>
+            <div className={`p-5 border-b ${divider}`}>
+              <h2 className={`text-lg font-bold ${headingStyle}`}>Settings</h2>
+              <p className={`text-xs mt-0.5 ${textMuted}`}>Customise your experience</p>
+            </div>
+
+            <nav className="flex-1 p-3 space-y-1 overflow-y-auto scrollbar-hide">
+              {CATEGORIES.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => { setActiveCategory(id); playSound?.('click'); }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-medium transition-all cursor-pointer ${
+                    activeCategory === id ? activeTabStyle : inactiveTabStyle
+                  }`}
+                >
+                  <Icon className="w-4 h-4 flex-shrink-0" />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </nav>
+
+            <div className={`p-4 border-t ${divider}`}>
+              <button
+                onClick={onClose}
+                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer ${
+                  bedtime
+                    ? 'bg-[#d5dae1] shadow-[2px_2px_4px_#b8bdc4,-2px_-2px_4px_#ffffff] text-[#1a0f08] hover:shadow-[3px_3px_6px_#b8bdc4,-3px_-3px_6px_#ffffff]'
+                    : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200'
+                }`}
+              >
+                <X className="w-4 h-4" />
+                Close
+              </button>
+            </div>
+          </div>
+
+          {/* Content area */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className={`px-6 py-4 border-b ${divider}`}>
+              <h2 className={`text-base font-semibold ${headingStyle}`}>
+                {CATEGORIES.find(c => c.id === activeCategory)?.label}
+              </h2>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
+              {renderContent()}
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
     </AnimatePresence>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-// // app/chat/components/SettingsModal.jsx
-// "use client";
-
-// import { useState, useEffect } from "react";
-// import { motion, AnimatePresence } from "framer-motion";
-// import { X, ChevronLeft } from "lucide-react";
-
-// const LEFT_WIDTH = 280;
-
-// const categories = [
-//   { id: "appearance", title: "Appearance" },
-//   { id: "typography", title: "Typography" },
-//   { id: "voice", title: "Voice & Speech" },
-//   { id: "chat", title: "Chat Behavior" },
-//   { id: "performance", title: "Performance" },
-// ];
-
-// export default function SettingsModal({
-//   show,
-//   onClose,
-//   settings,
-//   availableVoices = [],
-//   playSound = () => {},
-// }) {
-//   // local draft state so changes are only applied on Save
-//   const [openCategory, setOpenCategory] = useState("appearance");
-//   const [isMobileNav, setIsMobileNav] = useState(false);
-//   const [draft, setDraft] = useState(() => createDraft(settings));
-
-//   useEffect(() => {
-//     setDraft(createDraft(settings));
-//   }, [show, settings]);
-
-//   useEffect(() => {
-//     const onResize = () => setIsMobileNav(window.innerWidth < 768);
-//     onResize();
-//     window.addEventListener("resize", onResize);
-//     return () => window.removeEventListener("resize", onResize);
-//   }, []);
-
-//   function createDraft(s) {
-//     if (!s) return {};
-//     return {
-//       theme: s.isDarkMode ? "dark" : "light",
-//       bedtimeMode: !!s.bedtimeMode,
-//       focusMode: !!s.focusMode,
-//       animationsEnabled: !!s.animationsEnabled,
-//       ttsEnabled: !!s.ttsEnabled,
-//       selectedVoice: s.selectedVoice || null,
-//       fontSize: s.fontSize || "M",
-//       fontFamily: s.fontFamily || "standard",
-//       background: s.background || "doodles",
-//       soundEffects: !!s.soundEffects,
-//     };
-//   }
-
-//   function applyDraft() {
-//     // Apply draft to settings API
-//     if (!settings) return;
-//     settings.setDarkMode(draft.theme === "dark");
-//     settings.setBedtimeMode(!!draft.bedtimeMode);
-//     settings.setFocusMode(!!draft.focusMode);
-//     settings.setAnimationsEnabled(!!draft.animationsEnabled);
-//     settings.setTTSEnabled(!!draft.ttsEnabled);
-//     if (draft.selectedVoice) settings.setSelectedVoice(draft.selectedVoice);
-//     settings.setFontSize(draft.fontSize);
-//     settings.setFontFamily(draft.fontFamily);
-//     settings.setBackground(draft.background);
-//     settings.setSoundEffects(!!draft.soundEffects);
-
-//     playSound("click");
-//   }
-
-//   function handleSaveAndClose() {
-//     applyDraft();
-//     onClose?.();
-//   }
-
-//   function handleCancel() {
-//     setDraft(createDraft(settings)); // reset
-//     onClose?.();
-//   }
-
-//   // helpers
-//   const setDraftKey = (key, value) =>
-//     setDraft((d) => ({ ...d, [key]: value }));
-
-//   // motion variants
-//   const backdrop = { hidden: { opacity: 0 }, visible: { opacity: 1 } };
-//   const panel = { hidden: { y: 30, opacity: 0 }, visible: { y: 0, opacity: 1 } };
-//   const slideLeft = (x = 0) => ({ hidden: { x }, visible: { x: 0 }, exit: { x } });
-
-//   return (
-//     <AnimatePresence>
-//       {show && (
-//         <>
-//           {/* backdrop */}
-//           <motion.div
-//             key="backdrop"
-//             initial="hidden"
-//             animate="visible"
-//             exit="hidden"
-//             variants={backdrop}
-//             transition={{ duration: 0.18 }}
-//             onClick={handleCancel}
-//             className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
-//             aria-hidden="true"
-//           />
-
-//           {/* modal container */}
-//           <motion.div
-//             key="panel"
-//             initial="hidden"
-//             animate="visible"
-//             exit="hidden"
-//             variants={panel}
-//             transition={{ duration: 0.18 }}
-//             className="fixed inset-0 z-50 flex items-center justify-center p-4"
-//             role="dialog"
-//             aria-modal="true"
-//           >
-//             <div
-//               className={`relative w-full max-w-6xl h-[90vh] rounded-2xl overflow-hidden shadow-2xl`}
-//             >
-//               <div className="absolute inset-0 pointer-events-none">
-//                 {/* subtle glass layer */}
-//                 <div className="w-full h-full backdrop-blur-[22px] bg-white/6 dark:bg-black/20" />
-//               </div>
-
-//               <div className="relative z-10 flex h-full">
-//                 {/* Left column - categories */}
-//                 <div
-//                   className={`hidden md:flex flex-col w-[${LEFT_WIDTH}px] min-w-[${LEFT_WIDTH}px] bg-transparent border-r border-white/10 p-4 gap-4`}
-//                 >
-//                   {/* Header */}
-//                   <div className="flex items-center justify-between">
-//                     <div className="text-lg font-semibold">Settings</div>
-//                     <button
-//                       onClick={handleCancel}
-//                       className="p-2 rounded-md hover:bg-white/5 transition-colors"
-//                       aria-label="Close settings"
-//                     >
-//                       <X className="w-5 h-5" />
-//                     </button>
-//                   </div>
-
-//                   <nav className="flex-1 overflow-auto space-y-1 pr-1">
-//                     {categories.map((c) => (
-//                       <button
-//                         key={c.id}
-//                         onClick={() => setOpenCategory(c.id)}
-//                         className={`w-full text-left p-3 rounded-xl transition-colors cursor-pointer
-//                           ${openCategory === c.id ? "bg-white/10 backdrop-blur-md" : "hover:bg-white/3"}
-//                         `}
-//                       >
-//                         <div className="font-medium">{c.title}</div>
-//                         <div className="text-xs text-muted-foreground/70 mt-1">
-//                           {categorySubtitle(c.id)}
-//                         </div>
-//                       </button>
-//                     ))}
-//                   </nav>
-
-//                   <div className="flex gap-2">
-//                     <button
-//                       onClick={handleSaveAndClose}
-//                       className="flex-1 px-4 py-2 rounded-[16px] bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 text-white font-semibold shadow-md"
-//                     >
-//                       Save
-//                     </button>
-//                     <button
-//                       onClick={handleCancel}
-//                       className="flex-0 px-4 py-2 rounded-[16px] border border-white/10 text-white/90"
-//                     >
-//                       Cancel
-//                     </button>
-//                   </div>
-//                 </div>
-
-//                 {/* Right column - content */}
-//                 <div className="flex-1 overflow-auto">
-//                   {/* Mobile top bar (when width < md) — back button to category list */}
-//                   <div className="md:hidden flex items-center justify-between p-3 border-b border-white/6">
-//                     <div className="flex items-center gap-3">
-//                       <button
-//                         onClick={() => {
-//                           // on mobile, switching to categories view toggles the nav
-//                           if (openCategory === "categories") {
-//                             setOpenCategory("appearance");
-//                           } else {
-//                             setOpenCategory("categories");
-//                           }
-//                         }}
-//                         className="p-2 rounded-md"
-//                         aria-label="back"
-//                       >
-//                         <ChevronLeft className="w-5 h-5" />
-//                       </button>
-//                       <div className="text-lg font-semibold">Settings</div>
-//                     </div>
-//                     <div className="flex items-center gap-2">
-//                       <button
-//                         onClick={handleSaveAndClose}
-//                         className="px-3 py-2 rounded-[16px] bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 text-white text-sm font-semibold"
-//                       >
-//                         Save
-//                       </button>
-//                     </div>
-//                   </div>
-
-//                   {/* Main content area (split behavior on md+) */}
-//                   <div className="md:flex md:gap-6 md:p-6 p-4">
-//                     {/* category list column for mobile (slide in) */}
-//                     <div className="md:hidden mb-4">
-//                       <div className="flex gap-2 overflow-x-auto">
-//                         {categories.map((c) => (
-//                           <button
-//                             key={c.id}
-//                             onClick={() => setOpenCategory(c.id)}
-//                             className={`px-3 py-2 rounded-[16px] text-sm font-medium transition-colors whitespace-nowrap
-//                               ${openCategory === c.id ? "bg-white/10" : "bg-white/3/20 hover:bg-white/6"}
-//                             `}
-//                           >
-//                             {c.title}
-//                           </button>
-//                         ))}
-//                       </div>
-//                     </div>
-
-//                     {/* content card */}
-//                     <div className="flex-1 min-h-[60vh]">
-//                       {/* content header */}
-//                       <div className="flex items-center justify-between mb-4 md:mb-6">
-//                         <div>
-//                           <h3 className="text-xl font-semibold">
-//                             {categoryTitle(openCategory)}
-//                           </h3>
-//                           <p className="text-sm text-muted-foreground/80 mt-1">
-//                             {categoryDescription(openCategory)}
-//                           </p>
-//                         </div>
-//                         <div className="hidden md:flex items-center gap-2">
-//                           <button
-//                             onClick={() => {
-//                               // quick revert to defaults
-//                               setDraft(createDraft(settings));
-//                               playSound("click");
-//                             }}
-//                             className="px-3 py-2 rounded-[16px] border border-white/10 text-sm"
-//                           >
-//                             Revert
-//                           </button>
-//                         </div>
-//                       </div>
-
-//                       {/* panels for each category */}
-//                       <div className="space-y-6">
-//                         {openCategory === "appearance" && (
-//                           <AppearancePanel draft={draft} setDraftKey={setDraftKey} />
-//                         )}
-
-//                         {openCategory === "typography" && (
-//                           <TypographyPanel draft={draft} setDraftKey={setDraftKey} />
-//                         )}
-
-//                         {openCategory === "voice" && (
-//                           <VoicePanel
-//                             draft={draft}
-//                             setDraftKey={setDraftKey}
-//                             availableVoices={availableVoices}
-//                           />
-//                         )}
-
-//                         {openCategory === "chat" && (
-//                           <ChatPanel draft={draft} setDraftKey={setDraftKey} />
-//                         )}
-
-//                         {openCategory === "performance" && (
-//                           <PerformancePanel draft={draft} setDraftKey={setDraftKey} />
-//                         )}
-//                       </div>
-//                     </div>
-//                   </div>
-
-//                   {/* Mobile Save/Cancel bar bottom */}
-//                   <div className="md:hidden fixed left-0 right-0 bottom-0 z-50 p-4 bg-gradient-to-t from-black/20 backdrop-blur-md">
-//                     <div className="max-w-3xl mx-auto flex gap-2">
-//                       <button
-//                         onClick={handleSaveAndClose}
-//                         className="flex-1 px-4 py-3 rounded-[16px] bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 text-white font-semibold"
-//                       >
-//                         Save
-//                       </button>
-//                       <button
-//                         onClick={handleCancel}
-//                         className="px-4 py-3 rounded-[16px] border border-white/10 text-white/90"
-//                       >
-//                         Cancel
-//                       </button>
-//                     </div>
-//                   </div>
-//                 </div>
-//               </div>
-
-//               {/* top-right small close */}
-//               <div className="absolute top-4 right-4 z-20 hidden md:block">
-//                 <button
-//                   onClick={handleCancel}
-//                   className="p-2 rounded-md hover:bg-white/5 transition-colors"
-//                   aria-label="Close settings"
-//                 >
-//                   <X className="w-5 h-5" />
-//                 </button>
-//               </div>
-//             </div>
-//           </motion.div>
-//         </>
-//       )}
-//     </AnimatePresence>
-//   );
-// }
-
-// /* -------------------------
-//    Helper components below
-//    ------------------------- */
-
-// function categorySubtitle(id) {
-//   switch (id) {
-//     case "appearance":
-//       return "Theme, background, colors";
-//     case "typography":
-//       return "Fonts & sizes";
-//     case "voice":
-//       return "TTS and voices";
-//     case "chat":
-//       return "Behavior & memory";
-//     case "performance":
-//       return "Animations & effects";
-//     default:
-//       return "";
-//   }
-// }
-// function categoryTitle(id) {
-//   switch (id) {
-//     case "appearance":
-//       return "Appearance";
-//     case "typography":
-//       return "Typography";
-//     case "voice":
-//       return "Voice & Speech";
-//     case "chat":
-//       return "Chat Behavior";
-//     case "performance":
-//       return "Performance";
-//     default:
-//       return "";
-//   }
-// }
-// function categoryDescription(id) {
-//   switch (id) {
-//     case "appearance":
-//       return "Control theme, background, and visual accessibility options.";
-//     case "typography":
-//       return "Choose font family and size tailored for readability.";
-//     case "voice":
-//       return "Text-to-speech, voices, and playback options.";
-//     case "chat":
-//       return "Short-term / long-term memory, reply brevity, and focus mode.";
-//     case "performance":
-//       return "Animations, confetti, and sound effects.";
-//     default:
-//       return "";
-//   }
-// }
-
-// /* -------------------------
-//    Panels: Appearance / Typography / Voice / Chat / Performance
-//    Each panel receives draft and setDraftKey
-//    ------------------------- */
-
-// function AppearancePanel({ draft, setDraftKey }) {
-//   return (
-//     <section className="space-y-4">
-//       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-//         {/* Theme */}
-//         <div className="bg-white/3 p-4 rounded-2xl">
-//           <label className="block text-sm font-medium mb-2">Theme</label>
-//           <div className="flex gap-2">
-//             <button
-//               onClick={() => setDraftKey("theme", "light")}
-//               className={`px-3 py-2 rounded-[12px] ${draft.theme === "light" ? "bg-white/10" : "bg-white/3"}`}
-//             >
-//               Light
-//             </button>
-//             <button
-//               onClick={() => setDraftKey("theme", "dark")}
-//               className={`px-3 py-2 rounded-[12px] ${draft.theme === "dark" ? "bg-white/10" : "bg-white/3"}`}
-//             >
-//               Dark
-//             </button>
-//           </div>
-//         </div>
-
-//         {/* Background */}
-//         <div className="bg-white/3 p-4 rounded-2xl">
-//           <label className="block text-sm font-medium mb-2">Background</label>
-//           <div className="flex gap-2 flex-wrap">
-//             {[
-//               { id: "doodles", label: "Doodles" },
-//               { id: "gradient1", label: "Gradient 1" },
-//               { id: "gradient2", label: "Gradient 2" },
-//               { id: "gradient3", label: "Gradient 3" },
-//               { id: "gradient4", label: "Gradient 4" },
-//             ].map((bg) => (
-//               <button
-//                 key={bg.id}
-//                 onClick={() => setDraftKey("background", bg.id)}
-//                 className={`w-28 h-12 rounded-lg flex items-center justify-center text-xs font-medium ${draft.background === bg.id ? "ring-2 ring-offset-2 ring-indigo-400" : "hover:brightness-95"}`}
-//                 style={{
-//                   background:
-//                     bg.id === "doodles"
-//                       ? "url('/assets/bg_doodles.png') center/cover"
-//                       : bg.id === "gradient1"
-//                       ? "linear-gradient(90deg,#60a5fa,#7c3aed,#ec4899)"
-//                       : bg.id === "gradient2"
-//                       ? "linear-gradient(90deg,#34d399,#06b6d4,#7c3aed)"
-//                       : bg.id === "gradient3"
-//                       ? "linear-gradient(90deg,#fb923c,#ef4444,#ec4899)"
-//                       : "linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899)",
-//                 }}
-//                 aria-pressed={draft.background === bg.id}
-//               >
-//                 {bg.label}
-//               </button>
-//             ))}
-//           </div>
-//         </div>
-//       </div>
-
-//       {/* Bedtime / Focus Toggles */}
-//       <div className="flex gap-4">
-//         <Toggle
-//           label="Bedtime Mode"
-//           checked={!!draft.bedtimeMode}
-//           onChange={(v) => setDraftKey("bedtimeMode", v)}
-//           help="Soft-neumorphic presentation for low-light reading."
-//         />
-//         <Toggle
-//           label="Focus Mode"
-//           checked={!!draft.focusMode}
-//           onChange={(v) => setDraftKey("focusMode", v)}
-//           help="Maximize focus: simplified UI and reduced animations."
-//         />
-//       </div>
-//     </section>
-//   );
-// }
-
-// function TypographyPanel({ draft, setDraftKey }) {
-//   return (
-//     <section className="space-y-4">
-//       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-//         <div className="bg-white/3 p-4 rounded-2xl">
-//           <label className="block text-sm font-medium mb-2">Font Family</label>
-//           <select
-//             value={draft.fontFamily}
-//             onChange={(e) => setDraftKey("fontFamily", e.target.value)}
-//             className="w-full p-2 rounded-lg bg-transparent border border-white/6"
-//           >
-//             <option value="standard">Standard (Sans)</option>
-//             <option value="lexend">Lexend (Dyslexia-friendly)</option>
-//             <option value="times">Times New Roman</option>
-//           </select>
-//         </div>
-
-//         <div className="bg-white/3 p-4 rounded-2xl">
-//           <label className="block text-sm font-medium mb-2">Font Size</label>
-//           <div className="flex gap-2">
-//             {["XS", "S", "M", "L", "XL"].map((sz) => (
-//               <button
-//                 key={sz}
-//                 onClick={() => setDraftKey("fontSize", sz)}
-//                 className={`px-3 py-2 rounded-[12px] ${draft.fontSize === sz ? "bg-white/10" : "bg-white/3"}`}
-//               >
-//                 {sz}
-//               </button>
-//             ))}
-//           </div>
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
-
-// function VoicePanel({ draft, setDraftKey, availableVoices }) {
-//   return (
-//     <section className="space-y-4">
-//       <div className="bg-white/3 p-4 rounded-2xl">
-//         <label className="block text-sm font-medium mb-2">Enable TTS</label>
-//         <Toggle
-//           label=""
-//           checked={!!draft.ttsEnabled}
-//           onChange={(v) => setDraftKey("ttsEnabled", v)}
-//         />
-
-//         <div className="mt-4">
-//           <label className="block text-sm font-medium mb-2">Voice</label>
-//           <select
-//             value={draft.selectedVoice || ""}
-//             onChange={(e) => setDraftKey("selectedVoice", e.target.value)}
-//             disabled={!draft.ttsEnabled}
-//             className="w-full p-2 rounded-lg bg-transparent border border-white/6"
-//           >
-//             <option value="">Default</option>
-//             {availableVoices.map((v) => (
-//               <option key={v.name || v} value={v.name || v}>
-//                 {v.name || v}
-//               </option>
-//             ))}
-//           </select>
-//         </div>
-//       </div>
-
-//       <div className="bg-white/3 p-4 rounded-2xl">
-//         <label className="block text-sm font-medium mb-2">Playback Controls</label>
-//         <div className="flex gap-2 items-center">
-//           <button className="px-3 py-2 rounded-[12px] bg-white/6">Test Voice</button>
-//           <div className="text-sm text-muted-foreground/70">Volume / rate controls coming</div>
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
-
-// function ChatPanel({ draft, setDraftKey }) {
-//   return (
-//     <section className="space-y-4">
-//       <div className="bg-white/3 p-4 rounded-2xl">
-//         <label className="block text-sm font-medium mb-2">Reply Brevity</label>
-//         <div className="flex gap-2">
-//           <button onClick={() => setDraftKey("brevity", "concise")} className={`px-3 py-2 rounded-[12px] ${draft.brevity === "concise" ? "bg-white/10" : "bg-white/3"}`}>Concise</button>
-//           <button onClick={() => setDraftKey("brevity", "balanced")} className={`px-3 py-2 rounded-[12px] ${draft.brevity === "balanced" ? "bg-white/10" : "bg-white/3"}`}>Balanced</button>
-//           <button onClick={() => setDraftKey("brevity", "detailed")} className={`px-3 py-2 rounded-[12px] ${draft.brevity === "detailed" ? "bg-white/10" : "bg-white/3"}`}>Detailed</button>
-//         </div>
-//         <p className="text-xs text-muted-foreground/70 mt-2">When enabled, “tell me more” / “be brief” are interpreted semantically by the RAG layer.</p>
-//       </div>
-
-//       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-//         <div className="bg-white/3 p-4 rounded-2xl">
-//           <label className="block text-sm font-medium mb-2">Short-term Memory</label>
-//           <Toggle checked={!!draft.shortTermMemory} onChange={(v) => setDraftKey("shortTermMemory", v)} />
-//           <p className="text-xs text-muted-foreground/70 mt-2">Activates contextual short-term memory for follow-ups without storing the entire chat.</p>
-//         </div>
-
-//         <div className="bg-white/3 p-4 rounded-2xl">
-//           <label className="block text-sm font-medium mb-2">Long-term Memory</label>
-//           <Toggle checked={!!draft.longTermMemory} onChange={(v) => setDraftKey("longTermMemory", v)} />
-//           <p className="text-xs text-muted-foreground/70 mt-2">Used for retrieving older context when explicitly requested.</p>
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
-
-// function PerformancePanel({ draft, setDraftKey }) {
-//   return (
-//     <section className="space-y-4">
-//       <div className="bg-white/3 p-4 rounded-2xl">
-//         <label className="block text-sm font-medium mb-2">Animations</label>
-//         <Toggle checked={!!draft.animationsEnabled} onChange={(v) => setDraftKey("animationsEnabled", v)} />
-//       </div>
-
-//       <div className="bg-white/3 p-4 rounded-2xl">
-//         <label className="block text-sm font-medium mb-2">Sound Effects</label>
-//         <Toggle checked={!!draft.soundEffects} onChange={(v) => setDraftKey("soundEffects", v)} />
-//       </div>
-
-//       <div className="bg-white/3 p-4 rounded-2xl">
-//         <label className="block text-sm font-medium mb-2">Confetti / Celebrations</label>
-//         <Toggle checked={!!draft.confetti} onChange={(v) => setDraftKey("confetti", v)} />
-//       </div>
-//     </section>
-//   );
-// }
-
-// /* -------------------------
-//    Small UI primitives
-//    ------------------------- */
-
-// function Toggle({ label, checked, onChange, help }) {
-//   return (
-//     <div className="flex items-center justify-between">
-//       <div>
-//         {label && <div className="text-sm font-medium">{label}</div>}
-//         {help && <div className="text-xs text-muted-foreground/70 mt-1">{help}</div>}
-//       </div>
-//       <button
-//         role="switch"
-//         aria-checked={checked}
-//         onClick={() => onChange(!checked)}
-//         className={`w-12 h-7 rounded-full p-1 transition-colors ${checked ? "bg-indigo-500" : "bg-white/6"}`}
-//       >
-//         <div className={`w-5 h-5 rounded-full bg-white shadow transform transition-transform ${checked ? "translate-x-5" : "translate-x-0"}`} />
-//       </button>
-//     </div>
-//   );
-// }

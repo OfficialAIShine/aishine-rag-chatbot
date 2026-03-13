@@ -8,15 +8,10 @@ export const useSettings = () => {
   const [background, setBackground] = useState('moon');
   const [fontWeight, setFontWeight] = useState('regular');
   const [soundEffects, setSoundEffects] = useState(true);
-  const [focusMode, setFocusMode] = useState(false);
   const [bedtimeMode, setBedtimeMode] = useState(false);
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(true);
-  const [ttsSettings, setTtsSettings] = useState({
-    rate: 1.0,
-    pitch: 1.0,
-    volume: 1.0
-  });
+  const [ttsSettings, setTtsSettings] = useState({ rate: 1.0, pitch: 1.0, volume: 1.0 });
   const [selectedVoice, setSelectedVoice] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -28,38 +23,35 @@ export const useSettings = () => {
     const savedSettings = localStorage.getItem('aiShineSettings');
     if (savedSettings) {
       try {
-        const settings = JSON.parse(savedSettings);
-        setTheme(settings.theme || 'system');
-        setFontSize(settings.fontSize || 'M');
-        setFontFamily(settings.fontFamily || 'standard');
-        setBackground(settings.background || 'moon');
-        setFontWeight(settings.fontWeight || 'regular');
-        setSoundEffects(settings.soundEffects !== undefined ? settings.soundEffects : true);
-        setBedtimeMode(settings.bedtimeMode || false);
-        setAnimationsEnabled(settings.animationsEnabled !== undefined ? settings.animationsEnabled : true);
-        setTtsEnabled(settings.ttsEnabled !== undefined ? settings.ttsEnabled : true);
-        if (settings.ttsSettings) setTtsSettings(settings.ttsSettings);
-        setBubbleColor(settings.bubbleColor || DEFAULT_BUBBLE_COLOR);
-        setAutoScroll(settings.autoScroll !== undefined ? settings.autoScroll : true);
+        const s = JSON.parse(savedSettings);
+        setTheme(s.theme || 'system');
+        setFontSize(s.fontSize || 'M');
+        setFontFamily(s.fontFamily || 'standard');
+        setBackground(s.background || 'moon');
+        setFontWeight(s.fontWeight || 'regular');
+        setSoundEffects(s.soundEffects !== undefined ? s.soundEffects : true);
+        setBedtimeMode(s.bedtimeMode || false);
+        setAnimationsEnabled(s.animationsEnabled !== undefined ? s.animationsEnabled : true);
+        setTtsEnabled(s.ttsEnabled !== undefined ? s.ttsEnabled : true);
+        if (s.ttsSettings) setTtsSettings(s.ttsSettings);
+        setBubbleColor(s.bubbleColor || DEFAULT_BUBBLE_COLOR);
+        setAutoScroll(s.autoScroll !== undefined ? s.autoScroll : true);
       } catch (error) {
         console.error('[SETTINGS] Error loading settings:', error);
       }
     }
-
     setIsLoaded(true);
 
     // Auto-enable bedtime mode at night
     const hour = new Date().getHours();
-    if (hour >= 22 || hour < 6) {
-      setBedtimeMode(true);
-    }
+    if (hour >= 22 || hour < 6) setBedtimeMode(true);
   }, []);
 
-  // ── Apply theme (dark/light) ────────────────────────────────────────────────
+  // ── Apply theme ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
     const root = document.documentElement;
+
     const applyTheme = () => {
       let shouldBeDark = theme === 'dark' ||
         (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -78,68 +70,44 @@ export const useSettings = () => {
     applyTheme();
 
     if (theme === 'system') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      mediaQuery.addEventListener('change', applyTheme);
-      return () => mediaQuery.removeEventListener('change', applyTheme);
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      mq.addEventListener('change', applyTheme);
+      return () => mq.removeEventListener('change', applyTheme);
     }
   }, [theme, bedtimeMode]);
 
-  // ── Apply font family to document root ─────────────────────────────────────
-  // FIX: fontFamily was stored in state but never written to the DOM.
-  // Applying to :root means all text in the app inherits it automatically.
+  // ── Apply font family ──────────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
     const fontMap = {
       standard: "'Inter', system-ui, sans-serif",
       lexend:   "'Lexend', sans-serif",
       times:    "'Times New Roman', Times, serif"
     };
-
     document.documentElement.style.fontFamily = fontMap[fontFamily] || fontMap.standard;
   }, [fontFamily]);
 
-  // ── Apply font weight + style to document root ──────────────────────────────
-  // FIX: fontWeight was stored in state but never written to the DOM.
-  // Italic is a font-style, not a font-weight — handled separately.
+  // ── Apply font weight ──────────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    const weightMap = {
-      regular: '400',
-      bold:    '700',
-      italic:  '400'  // italic is a style, not a weight
-    };
-
+    const weightMap = { regular: '400', bold: '700', italic: '400' };
     document.documentElement.style.fontWeight = weightMap[fontWeight] || '400';
     document.documentElement.style.fontStyle  = fontWeight === 'italic' ? 'italic' : 'normal';
   }, [fontWeight]);
 
-  // ── Save settings on change ─────────────────────────────────────────────────
-  // Guard: don't persist until initial load is complete (avoids overwriting saved state with defaults)
+  // ── Persist settings ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!isLoaded) return;
-
-    const settings = {
-      theme,
-      fontSize,
-      fontFamily,
-      background,
-      fontWeight,
-      soundEffects,
-      bedtimeMode,
-      animationsEnabled,
-      ttsEnabled,
-      ttsSettings,
-      selectedVoice: selectedVoice?.name,
-      bubbleColor,
-      autoScroll
-    };
-    localStorage.setItem('aiShineSettings', JSON.stringify(settings));
+    localStorage.setItem('aiShineSettings', JSON.stringify({
+      theme, fontSize, fontFamily, background, fontWeight,
+      soundEffects, bedtimeMode, animationsEnabled,
+      ttsEnabled, ttsSettings, selectedVoice: selectedVoice?.name,
+      bubbleColor, autoScroll
+    }));
   }, [
     theme, fontSize, fontFamily, background, fontWeight,
-    soundEffects, bedtimeMode, animationsEnabled, ttsEnabled,
-    ttsSettings, selectedVoice, isLoaded, bubbleColor, autoScroll
+    soundEffects, bedtimeMode, animationsEnabled,
+    ttsEnabled, ttsSettings, selectedVoice, isLoaded, bubbleColor, autoScroll
   ]);
 
   return {
@@ -149,7 +117,6 @@ export const useSettings = () => {
     background, setBackground,
     fontWeight, setFontWeight,
     soundEffects, setSoundEffects,
-    focusMode, setFocusMode,
     bedtimeMode, setBedtimeMode,
     animationsEnabled, setAnimationsEnabled,
     ttsEnabled, setTtsEnabled,
