@@ -82,6 +82,14 @@ export default function ChatWidget({
     if (showSidebar) loadConversations();
   }, [showSidebar]);
 
+  useEffect(() => {
+  if (!isWidgetMode) return;
+  window.parent.postMessage(
+    { type: 'AISHINE_WIDGET_STATE', collapsed: isCollapsed },
+    '*'
+  );
+}, [isCollapsed, isWidgetMode]);
+
   const loadConversations = async () => {
     try {
       setSidebarLoading(true);
